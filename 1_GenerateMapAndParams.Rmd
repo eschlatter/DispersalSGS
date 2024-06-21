@@ -136,23 +136,17 @@ ggsave(filename="map_SLiM.png",plot=g,width=round(dist_x)/10,height=round(dist_y
 #Reference plot
 #--------------------------------------------------------------------
 
-ggplot(reef_sim)+
+h <- ggplot(reef_sim)+
   geom_sf(color='black',fill='black')+
   geom_sf(data=sgs_points_sf,color='blue')+
   coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
   geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
-    theme(axis.ticks = element_blank(),
-        axis.text = element_blank(),
-        axis.title = element_blank(),
-        axis.line = element_blank(),
-        legend.position = "none",
-        axis.ticks.length = unit(0, "null"),
-        axis.ticks.margin = unit(0, "null"),
-        panel.background = element_rect(fill = "lightblue"),
+  theme(panel.background = element_rect(fill = "lightblue"),
         panel.grid.major = element_blank(),
         panel.border=element_blank(),
         plot.margin = unit(c(0, 0, 0, 0),"points"),
         panel.margin = unit(c(0, 0, 0, 0), "null"))
+ggsave(filename="map_reference.png",plot=h)
 ```
 
 
@@ -213,3 +207,22 @@ units(area_reef) <- "km^2"
 De_km2 <- De_Naaykens/area_parentage_1km # density per km^2 = (individuals)/(linear km) * (linear km)/(km^2)
 Ne_reef <- De_km2*area_reef # total number of individuals on reef
 ```
+
+## Generate sampling site coordinates for SLiM to use
+SLiM's coordinate system is in km, with (0,0) in the SW corner.
+```{r}
+load('data/SGS_sites.RData')
+load('data/mmp_crop.RData')
+
+sgs_sites_slim <- data.frame(x = rep(NA,nrow(sites_lonlat)), y=rep(NA,nrow(sites_lonlat)))
+
+for(i in 1:nrow(sites_lonlat)){
+  sgs_sites_slim$x[i] = distGeo(sites_lonlat[i,],c(min_lon,sites_lonlat[i,2]))
+  sgs_sites_slim$y[i] = distGeo(sites_lonlat[i,],c(sites_lonlat[i,1],min_lat))
+}
+
+sgs_sites_slim=sgs_sites_slim/1000 # convert to km
+
+write_csv(sgs_sites_slim,file='data/sgs_sites_SLiM')
+```
+

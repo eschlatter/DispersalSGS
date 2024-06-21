@@ -1,0 +1,147 @@
+species all initialize(){
+	defineConstant("N_sponge",500);
+	defineConstant("F_goby",80);
+	defineConstant("NMAX",0.5); //500 is big enough to reach the whole map
+	defineConstant("MATECHOICE_DIST",0.05); // 50m?
+	
+	initializeSLiMModelType("nonWF");
+	
+	// larvae looking for sponges
+	initializeInteractionType(1,"xy",maxDistance=NMAX);
+	i1.setInteractionFunction("l",1.0);   //think about this
+	
+	// females looking for mates
+	initializeInteractionType(2,"xy",maxDistance=MATECHOICE_DIST,sexSegregation='FM');
+	i2.setInteractionFunction("l",1.0);   //think about this
+	
+	//sponges checking for settlers
+	initializeInteractionType(3,"xy",maxDistance=0);
+}
+
+species sponge initialize() {
+	initializeSpecies(avatar = 'S', color='orange');
+	initializeSLiMOptions(dimensionality="xy");
+}
+
+species goby initialize() {
+	initializeSpecies(avatar='G',color='blue');
+	initializeSLiMOptions(dimensionality="xy");
+	
+	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
+	m1.convertToSubstitution = T;
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, 99999); // for right now, stick with one chromosome, but we'll add this in later
+	initializeMutationRate(1e-7); // per base position per gamete. Lit value is 0.5e-8 per site per GENERATION (not gamete), so divide that by 2x the pop size used to generate the estimate? I'll check the paper again...
+	initializeRecombinationRate(1.5e-8); // per base position per gamete, 1cM/Mbp=1e-8 in SLiM's units. Lit says 1.5cM/Mbp, so set to 1.5e-8.
+	initializeSex("A"); // I don't think we need to be as specific as X/Y chromosomes
+
+}
+
+// set up populations and map
+ticks all 1 early() {
+	sponge.addSubpop("p1", N_sponge); //sponges
+	goby.addSubpop("p2",500);
+	
+	// map png file generated from matlab code (Shaw et al 2019)
+	mapImage = Image("BBR_map_MMP.png");
+	p1.setSpatialBounds(c(0.0, 0.0, 95.648, 220.646)); // distances in km: from dist_x and dist_y in Rmd file
+	map = p1.defineSpatialMap("bbr", "xy", mapImage.floatB,
+		valueRange=c(0.0, 1.0), colors=c("black", "white"));
+	defineConstant("BBR", map);
+	
+	p2.setSpatialBounds(c(0.0, 0.0, 95.648, 220.646)); // distances in km: from dist_x and dist_y in Rmd file
+	map = p2.defineSpatialMap("bbr", "xy", mapImage.floatR,
+		valueRange=c(0.0, 1.0), colors=c("black", "white"));
+	
+	
+	// set spatial positions of sponges (anywhere on reef)
+	// credit: https://github.com/MesserLab/SLiM-Extras
+	leftToDraw = p1.individuals;
+	
+	while (size(leftToDraw) > 0)
+	{
+		positions = p1.pointUniform(size(leftToDraw));
+		onReef = p1.spatialMapValue("bbr", positions) == 0.0;
+		onReefCount = sum(onReef);
+		
+		if (onReefCount > 0)
+		{
+			onReefPositions = positions[repEach(onReef, 2)];
+			leftToDraw[seqLen(onReefCount)].setSpatialPosition(onReefPositions);
+			leftToDraw = leftToDraw[seqLen(size(leftToDraw) - onReefCount) + onReefCount];
+		}
+	}
+	
+	// place gobies in sponge positions
+	positions = p1.sampleIndividuals(size(p2.individuals)).spatialPosition;
+	p2.individuals.setSpatialPosition(positions);
+}
+
+ticks goby 2: first(){
+	i2.evaluate(p2);
+	}
+
+// reproduction
+species goby reproduction(NULL,'F'){
+	mate = i2.drawByStrength(receiver = individual,count = 1); // search for a mate within range
+	//mate = subpop.sampleIndividuals(size=1, sex='M'); //choose a mate
+	
+	if (size(mate)){  //produce offspring
+		clutchSize = rpois(1,F_goby);
+		for(i in seqLen(clutchSize)){
+			subpop.addCrossed(individual,mate);
+		}
+	}
+}
+
+//displacement
+ticks goby 2: early() {
+	larvae = p2.subsetIndividuals(maxAge=0);
+	p2.deviatePositions(larvae,"stopping",INF,"e",0.36); //need to figure out what to do about the boundary condition here
+}
+
+//find a sponge
+ticks all 2: early(){
+	i1.evaluate(c(p2,p1));
+	p2.individuals.tag=1; //survives, unless later specified
+	larvae = p2.subsetIndividuals(maxAge=0);
+	for (larva in larvae){
+		settle_site = i1.drawByStrength(receiver = larva,count = 1,exerterSubpop = p1); // search for a sponge within range
+		if(size(settle_site)){  // if a sponge was found
+			larva.setSpatialPosition(settle_site.spatialPosition); //settle there
+			larva.tag=1;
+		}
+		else larva.tag=0; // larva dies
+	}
+	cat(size(p2.individuals)+' '); 										//1. total in population
+	cat(size(larvae)+' ');  													//2. total larvae	
+	cat(size(larvae[which(larvae.tag==1)])+' '); 						//3. find a sponge
+	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who didn't find a sponge
+}
+
+// nonoverlapping generations
+species goby survival() {
+	return (individual.age == 0);
+}
+
+//competition
+ticks all 2: late(){
+	i3.evaluate(c(p1,p2));
+	p2.individuals.tag=1; // survives, unless later specified
+	tot_sett=0;
+	for(spot in p1.individuals){
+		settlers = i3.nearestInteractingNeighbors(spot,count=size(p2.individuals),exerterSubpop=p2);
+		n_sett = size(settlers);
+		if(n_sett>1){ //if there's competition
+			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0;
+		}
+		//		catn(size(settlers) + ' ' + size(settlers[which(settlers.tag==0)])); //how many died?
+		tot_sett = tot_sett+n_sett;
+	}
+	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
+	cat(tot_sett+' '); 														//4.  # competitors (same as # who found a sponge)
+	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successfull recruits
+}
+
+ticks all 500 late() {
+}

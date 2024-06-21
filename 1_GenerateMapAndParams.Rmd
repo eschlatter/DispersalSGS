@@ -1,0 +1,215 @@
+---
+title: "SLiM model map and parameter setup"
+author: "E Schlatter"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS")
+library(tidyverse)
+library(sf)
+library(sp)
+library(stars)
+library(raster)
+library(geosphere)
+library(lwgeom)
+```
+
+### Data: D'Aloia et al SGS sampling sites
+```{r, eval=FALSE}
+sgs_sites <- read.csv('data/SGS_sites.csv')
+
+sgs_points <- SpatialPoints(sgs_sites[,c('Coord_UTM_zone_16N.x','Coord_UTM_zone_16N.y')])
+crs.geo <- CRS("+init=epsg:32616")  # https://spatialreference.org/ref/epsg/?search=utm+16N
+proj4string(sgs_points) <- crs.geo  # define projection system of our data
+sgs_points_df <- SpatialPointsDataFrame(sgs_points,sgs_sites)
+sgs_points_sf <- st_as_sf(sgs_points_df)
+
+spgeo <- spTransform(sgs_points, CRS("+proj=longlat +datum=WGS84"))
+sites_lonlat <- coordinates(spgeo)
+sgs_points_df <- cbind(sgs_points_df,sites_lonlat)
+save(sgs_points,sgs_points_df,sgs_points_sf,sites_lonlat,file='data/SGS_sites.RData')
+```
+
+### Data: Global Distribution of Coral Reefs/Millennium Coral Reef Mapping Project
+https://data.unep-wcmc.org/datasets/1
+```{r, eval=FALSE}
+load('data/SGS_sites.RData')
+
+# points with expert-verified habitat info, etc
+# not much useful in our region
+mmp_shp <- read_sf("data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Pt_v4_1.shp")  # points
+
+ggplot(mmp_shp)+
+  geom_sf(aes(color=LOC_DEF))+
+  geom_sf(data=sgs_points_sf,shape='*',size=5)+
+  theme_minimal()+
+  xlim(c(-88.5,-87))+
+  ylim(c(16,19))
+
+# this is the one we want. Polygons/multipolygons classified as coral. Subclassifications don't seem very helpful.
+mmpy_shp <- read_sf("data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Py_v4_1.shp")
+
+
+# pull out the general area we want and save it
+sf_use_s2(FALSE) # otherwise, trying to crop gives an error due to spherical geometry
+bze <- st_crop(mmpy_shp,xmin=-88.5,xmax=-87,ymin=16,ymax=19)
+rm(mmpy_shp) #it's big
+
+save(bze,file='data/mmp_bze.RData')
+```
+
+### Determine geographic extent
+I'm using 16.4km (i.e., max goby dispersal distance) outside of the SGS sampling area in each direction. If we simulate in that area (and let individuals die if they leave it), we shouldn't have to worry too much about edge effects.
+```{r, eval=FALSE}
+load('data/mmp_bze.RData')
+load('data/SGS_sites.RData')
+
+#sites that are the farthest north, south, east and west
+borders=sites_lonlat[c(1,15,19,33),]
+
+# points 16.4km N,S,E,W of those (respectively)
+bord_n <- destPoint(borders[1,],0,16.4*1000)
+bord_s <- destPoint(borders[3,],180,16.4*1000)
+bord_w <- destPoint(borders[2,],270,16.4*1000)
+bord_e <- destPoint(borders[4,],90,16.4*1000)
+
+# get the max lat and lon of those points. These will be the boundaries of our map.
+bords <- rbind(bord_n,bord_s,bord_w,bord_e)
+min_lat <- min(bords[,2])
+max_lat <- max(bords[,2])
+min_lon <- min(bords[,1])
+max_lon <- max(bords[,1])
+
+# generate a reef object cropped to that size
+reef_sim <- st_crop(bze,xmin=min_lon,xmax=max_lon,ymin=min_lat,ymax=max_lat,crop=TRUE)
+
+## get the size of the map, in meters
+# the x-direction isn't exact, because we're on a sphere. The distance between the top two corners is about 1km less than the distance between the bottom two corners. I'm not sure how this gets resolved.
+dist_x1 <- distGeo(c(min_lon,max_lat),c(max_lon,max_lat))
+dist_x2 <- distGeo(c(min_lon,min_lat),c(max_lon,min_lat))
+dist_x <- (dist_x1+dist_x2)/2/1000
+    
+# not a problem in the y-direction, because distance N-S is the same, no matter which longitude you're on
+dist_y <- distGeo(c(min_lon,min_lat),c(min_lon,max_lat))/1000
+
+save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='data/mmp_crop.RData')
+```
+
+
+### Generate plots
+1) png file for use by SLiM
+2) figure showing reef and the SGS sampling sites, for reference
+```{r}
+load('data/mmp_crop.RData')
+load('data/SGS_sites.RData')
+
+#--------------------------------------------------------------------
+# Plot for SLiM
+#--------------------------------------------------------------------
+
+g <- ggplot(reef_sim)+
+  geom_sf(color='black',fill='black')+
+  labs(x=NULL,y=NULL)+
+  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
+  theme(axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.line = element_blank(),
+        legend.position = "none",
+        axis.ticks.length = unit(0, "null"),
+        axis.ticks.margin = unit(0, "null"),
+        legend.margin = unit(0, "null"),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.border=element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null"))
+
+# I'm not sure how big it should be, but keep it proportional
+ggsave(filename="map_SLiM.png",plot=g,width=round(dist_x)/10,height=round(dist_y)/10,units='cm')
+
+
+#--------------------------------------------------------------------
+#Reference plot
+#--------------------------------------------------------------------
+
+ggplot(reef_sim)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='blue')+
+  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
+  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
+    theme(axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.line = element_blank(),
+        legend.position = "none",
+        axis.ticks.length = unit(0, "null"),
+        axis.ticks.margin = unit(0, "null"),
+        panel.background = element_rect(fill = "lightblue"),
+        panel.grid.major = element_blank(),
+        panel.border=element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null"))
+```
+
+
+### Calculate population size
+This is Ne for gobies within the previously defined geographic extent.
+I'm setting up the model with that many habitable sponges, so assuming habitat was saturated when Naaykens and D'Aloia estimated De.
+?? Effective vs actual population size? Can I just use Ne?
+```{r}
+load('data/mmp_crop.RData')
+load('data/SGS_sites.RData')
+
+De_Naaykens <- 749 # effective pop density (individuals/km), Naaykens and D'Aloia 2022. This estimate is assuming random mating.
+
+#--------------------------------------------------------------------
+# 1. Get pop density per km^2.
+#--------------------------------------------------------------------
+# Value from Naaykens and D'Aloia 2022 is per linear km of reef, so first need to convert to per km^2:
+# How many km^2 in one linear km of reef?
+
+# Generate the region of that study, i.e., the 41km of barrier reef centered around Carrie Bow.
+carriebow_coords <- sites_lonlat[15,] # Carrie Bow is site B16 (15th row of site data)
+transect_n <- destPoint(carriebow_coords,0,1000*41/2) # get lat/lon 20.5km N and S of Carrie Bow
+transect_s <- destPoint(carriebow_coords,180,1000*41/2)
+# create an object that contains all the reef within that lat/lon
+# that includes Glover's and a bunch of lagoon, so I'm cropping those out: xmax=-88 to exclude Glover's, xmin=-88.08 to exclude lagoon
+### !! This is a pretty rough method and I don't like it, but I'll go with it for now. A better map would help.
+parentage_transect <- st_crop(reef_sim,xmin=-88.08,xmax=-88,ymin=transect_s[2],ymax=transect_n[2])
+# here's what it looks like:
+ggplot(parentage_transect)+
+  geom_sf()+
+  geom_sf(data=sgs_points_sf,color='black')+
+  geom_sf_text(data=sgs_points_sf,aes(label=Site),color='white',hjust=0, vjust=0,size=2)+
+  theme(panel.background = element_rect(fill = "lightblue"),panel.grid.major = element_blank())+
+  xlim(c(-88.3,-88))+
+  ylim(c(16.5,17))+
+  ggtitle('parentage transect')
+
+# Find the area of that region
+area_parentage <- st_area(parentage_transect) # calculate the area
+area_parentage <- sum(area_parentage) #in m^2
+units(area_parentage) <- "km^2" # and convert to km^2
+
+# It's 41km long, so this gives the (average) area of 1km of linear reef, in km^2
+area_parentage_1km <- area_parentage/41
+
+#--------------------------------------------------------------------
+# 2. Find the total area of reef (km^2) on which sponges will be distributed
+#--------------------------------------------------------------------
+
+area_reef <- sum(st_area(reef_sim))
+units(area_reef) <- "km^2"
+#Looking at a map, ~701km^2 (a box 26km on each side) seems about right for the total reef area
+
+#--------------------------------------------------------------------
+# 3. Total number of individuals on the reef 
+#--------------------------------------------------------------------
+
+De_km2 <- De_Naaykens/area_parentage_1km # density per km^2 = (individuals)/(linear km) * (linear km)/(km^2)
+Ne_reef <- De_km2*area_reef # total number of individuals on reef
+```

@@ -43,7 +43,7 @@ ticks all 1 early() {
 	goby.addSubpop("p2",500);
 	
 	// map png file generated from matlab code (Shaw et al 2019)
-	mapImage = Image("BBR_map_MMP.png");
+	mapImage = Image("map_SLiM.png");
 	p1.setSpatialBounds(c(0.0, 0.0, 95.648, 220.646)); // distances in km: from dist_x and dist_y in Rmd file
 	map = p1.defineSpatialMap("bbr", "xy", mapImage.floatB,
 		valueRange=c(0.0, 1.0), colors=c("black", "white"));

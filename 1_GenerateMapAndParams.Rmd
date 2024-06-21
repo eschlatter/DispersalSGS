@@ -1,5 +1,5 @@
 ---
-title: "SLiM model map and parameter setup"
+title: "Generate map and calculate parameter values"
 author: "E Schlatter"
 date: "`r Sys.Date()`"
 output: html_document
@@ -17,7 +17,7 @@ library(geosphere)
 library(lwgeom)
 ```
 
-### Data: D'Aloia et al SGS sampling sites
+### Import data: D'Aloia et al SGS sampling sites
 ```{r, eval=FALSE}
 sgs_sites <- read.csv('data/SGS_sites.csv')
 
@@ -33,7 +33,7 @@ sgs_points_df <- cbind(sgs_points_df,sites_lonlat)
 save(sgs_points,sgs_points_df,sgs_points_sf,sites_lonlat,file='data/SGS_sites.RData')
 ```
 
-### Data: Global Distribution of Coral Reefs/Millennium Coral Reef Mapping Project
+### Import data: Global Distribution of Coral Reefs/Millennium Coral Reef Mapping Project
 https://data.unep-wcmc.org/datasets/1
 ```{r, eval=FALSE}
 load('data/SGS_sites.RData')
@@ -61,7 +61,7 @@ rm(mmpy_shp) #it's big
 save(bze,file='data/mmp_bze.RData')
 ```
 
-### Determine geographic extent
+### Determine geographic extent for simulation
 I'm using 16.4km (i.e., max goby dispersal distance) outside of the SGS sampling area in each direction. If we simulate in that area (and let individuals die if they leave it), we shouldn't have to worry too much about edge effects.
 ```{r, eval=FALSE}
 load('data/mmp_bze.RData')

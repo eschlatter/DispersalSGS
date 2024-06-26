@@ -15,3 +15,5 @@ https://docs.google.com/spreadsheets/d/1zxMT583BmHr4OSTqSfwo9JgcTCxLh0YJXrepr66i
 
 - `3_AddMutations.py`: Process simulation output. In particular, add neutral mutations. Output new tree sequence.
     - `final_overlaid.trees`: output: tree sequence with neutral mutations
+
+- `map_reference.png`: A map of the study area and sampling sites, for visual reference

@@ -8,12 +8,13 @@ https://docs.google.com/spreadsheets/d/1zxMT583BmHr4OSTqSfwo9JgcTCxLh0YJXrepr66i
 ## Contents:
 - `data`: folder containing raw data for reef mapping and locations of sampling sites
 
-- `1_GenerateMapAndParams.Rmd`: Preliminary data processing to generate map and parameter values for SLiM
+- `analysis`: folder containing scripts to perform data processing, simulation, and analysis
+  - `1_GenerateMapAndParams.Rmd`: Preliminary data processing to generate map and parameter values for SLiM
+  - `2_SimulateEvolution.slim`: SLiM simulation model
+  - `3_AddMutations.py`: Process simulation output -- in particular, add neutral mutations.
 
-- `2_SimulateEvolution.slim`: SLiM simulation model; outputs a tree sequence
-    - `final.trees`: output of simulation
-
-- `3_AddMutations.py`: Process simulation output. In particular, add neutral mutations. Output new tree sequence.
-    - `final_overlaid.trees`: output: tree sequence with neutral mutations
+- `output`: folder containing output files from analyses
+    - `final.trees`: output of step 2: tree sequence recording of simulation
+    - `final_overlaid.trees`: output of step 3: tree sequence with neutral mutations overlaid
 
 - `map_reference.png`: A map of the study area and sampling sites, for visual reference

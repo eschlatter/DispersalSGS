@@ -10,4 +10,6 @@ https://docs.google.com/spreadsheets/d/1zxMT583BmHr4OSTqSfwo9JgcTCxLh0YJXrepr66i
 
 * 1_GenerateMapAndParams.Rmd: Preliminary data processing to generate map and parameter values for SLiM
 
-* model_E_lori.slim: SLiM simulation model
+* 2_SimulateEvolution.slim: SLiM simulation model; outputs a tree sequence (final.trees)
+
+* 3_AddMutations.py: Process simulation output. In particular, add neutral mutations. Output new tree sequence (final_overlaid.trees)

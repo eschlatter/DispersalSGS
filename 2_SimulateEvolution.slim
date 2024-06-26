@@ -1,4 +1,6 @@
 species all initialize(){
+	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS");
+	
 	//!! all 4 of these need to be set
 	defineConstant("N_sponge",500); // population size (when habitat is saturated)
 	defineConstant("F_goby",150); // number of offspring per female
@@ -27,12 +29,14 @@ species sponge initialize() {
 species goby initialize() {
 	initializeSpecies(avatar='G',color='blue');
 	initializeSLiMOptions(dimensionality="xy");
+	initializeTreeSeq();
 	
 	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
 	m1.convertToSubstitution = T;
 	initializeGenomicElementType("g1", m1, 1.0);
 	initializeGenomicElement(g1, 0, 99999); // for right now, stick with one chromosome, but we'll add this in later
-	initializeMutationRate(1e-7); // per base position per gamete. Lit value is 0.5e-8 per site per GENERATION (not gamete), so divide that by 2x the pop size used to generate the estimate? I'll check the paper again...
+	//initializeMutationRate(1e-7); // per base position per gamete. Lit value is 0.5e-8 per site per GENERATION (not gamete), so divide that by 2x the pop size used to generate the estimate? I'll check the paper again...
+	initializeMutationRate(0);	
 	initializeRecombinationRate(1.5e-8); // per base position per gamete, 1cM/Mbp=1e-8 in SLiM's units. Lit says 1.5cM/Mbp, so set to 1.5e-8.
 	initializeSex("A"); // I don't think we need X/Y chromosome level of detail
 
@@ -80,7 +84,7 @@ ticks all 1 early() {
 
 ticks goby 2: first(){
 	i2.evaluate(p2);
-	}
+}
 
 // reproduction
 species goby reproduction(NULL,'F'){
@@ -143,5 +147,6 @@ ticks all 2: late(){
 	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successfull recruits
 }
 
-ticks all 500 late() {
+ticks all 50 late() {
+goby.treeSeqOutput("final.trees");
 }

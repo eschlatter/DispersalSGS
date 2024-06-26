@@ -6,10 +6,12 @@ Using the neon goby Elacatinus lori as a model system, I am investigating whethe
 https://docs.google.com/spreadsheets/d/1zxMT583BmHr4OSTqSfwo9JgcTCxLh0YJXrepr66iRqI/edit?gid=0#gid=0
 
 ## Contents:
-* data: folder containing raw data for reef mapping and locations of sampling sites
+- `data`: folder containing raw data for reef mapping and locations of sampling sites
 
-* 1_GenerateMapAndParams.Rmd: Preliminary data processing to generate map and parameter values for SLiM
+- `1_GenerateMapAndParams.Rmd`: Preliminary data processing to generate map and parameter values for SLiM
 
-* 2_SimulateEvolution.slim: SLiM simulation model; outputs a tree sequence (final.trees)
+- `2_SimulateEvolution.slim`: SLiM simulation model; outputs a tree sequence
+    - `final.trees`: output of simulation
 
-* 3_AddMutations.py: Process simulation output. In particular, add neutral mutations. Output new tree sequence (final_overlaid.trees)
+- `3_AddMutations.py`: Process simulation output. In particular, add neutral mutations. Output new tree sequence.
+    - `final_overlaid.trees`: output: tree sequence with neutral mutations

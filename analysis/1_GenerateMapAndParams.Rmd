@@ -19,7 +19,7 @@ library(lwgeom)
 
 ### Import data: D'Aloia et al SGS sampling sites
 ```{r, eval=FALSE}
-sgs_sites <- read.csv('data/SGS_sites.csv')
+sgs_sites <- read.csv('../data/SGS_sites.csv')
 
 sgs_points <- SpatialPoints(sgs_sites[,c('Coord_UTM_zone_16N.x','Coord_UTM_zone_16N.y')])
 crs.geo <- CRS("+init=epsg:32616")  # https://spatialreference.org/ref/epsg/?search=utm+16N
@@ -36,11 +36,11 @@ save(sgs_points,sgs_points_df,sgs_points_sf,sites_lonlat,file='data/SGS_sites.RD
 ### Import data: Global Distribution of Coral Reefs/Millennium Coral Reef Mapping Project
 https://data.unep-wcmc.org/datasets/1
 ```{r, eval=FALSE}
-load('data/SGS_sites.RData')
+load('../data/SGS_sites.RData')
 
 # points with expert-verified habitat info, etc
 # not much useful in our region
-mmp_shp <- read_sf("data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Pt_v4_1.shp")  # points
+mmp_shp <- read_sf("../data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Pt_v4_1.shp")  # points
 
 ggplot(mmp_shp)+
   geom_sf(aes(color=LOC_DEF))+
@@ -50,7 +50,7 @@ ggplot(mmp_shp)+
   ylim(c(16,19))
 
 # this is the one we want. Polygons/multipolygons classified as coral. Subclassifications don't seem very helpful.
-mmpy_shp <- read_sf("data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Py_v4_1.shp")
+mmpy_shp <- read_sf("../data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Py_v4_1.shp")
 
 
 # pull out the general area we want and save it
@@ -58,14 +58,14 @@ sf_use_s2(FALSE) # otherwise, trying to crop gives an error due to spherical geo
 bze <- st_crop(mmpy_shp,xmin=-88.5,xmax=-87,ymin=16,ymax=19)
 rm(mmpy_shp) #it's big
 
-save(bze,file='data/mmp_bze.RData')
+save(bze,file='../data/mmp_bze.RData')
 ```
 
 ### Determine geographic extent for simulation
 I'm using 16.4km (i.e., max goby dispersal distance) outside of the SGS sampling area in each direction. If we simulate in that area (and let individuals die if they leave it), we shouldn't have to worry too much about edge effects.
 ```{r, eval=FALSE}
-load('data/mmp_bze.RData')
-load('data/SGS_sites.RData')
+load('../data/mmp_bze.RData')
+load('../data/SGS_sites.RData')
 
 #sites that are the farthest north, south, east and west
 borders=sites_lonlat[c(1,15,19,33),]
@@ -95,23 +95,73 @@ dist_x <- (dist_x1+dist_x2)/2/1000
 # not a problem in the y-direction, because distance N-S is the same, no matter which longitude you're on
 dist_y <- distGeo(c(min_lon,min_lat),c(min_lon,max_lat))/1000
 
-save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='data/mmp_crop.RData')
+#save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
 ```
 
+### TNC Caribbean dataset:
+https://hub.arcgis.com/datasets/TNC::coral-reefs-2017/explore
+I'm going to use this dataset instead, at least for now, because the lagoon and interior atolls are cropped
+
+```{r,eval=FALSE}
+load('../data/mmp_crop.RData')
+
+TNC <- read_sf('../data/TNC_CoralReefs.geojson')
+TNC_sub <- filter(TNC,FID %in% c(24,25,26,29,31))
+sf_use_s2(FALSE)
+TNC_sim <- st_crop(TNC_sub,xmin=min_lon,xmax=max_lon,ymin=min_lat,ymax=max_lat,crop=TRUE)
+save(TNC_sim,file='../data/TNC_sim.RData')
+```
+
+```{r,eval=FALSE}
+load('../data/TNC_sim.RData')
+
+## Get the barrier reef
+barrier <- TNC_sim[c(1,2,3,4),]$geometry
+
+## Get the atolls, cut out the holes, put them back into a multipolygon with CRS
+atolls=TNC_sim[5,]$geometry
+
+# glovers
+glovers <- st_polygon(atolls[[1]][[1]])
+
+# lighthouse
+atoll2 <- st_polygon(atolls[[1]][[2]]) #outside
+atoll3 <- st_polygon(atolls[[1]][[3]]) #inside
+lighthouse <- st_difference(atoll2,atoll3)
+
+# turneffe
+atoll5 <- st_polygon(atolls[[1]][[5]]) # outside
+atoll6 <- st_polygon(atolls[[1]][[6]]) # inside
+turneffe <- st_difference(atoll5,atoll6)
+
+# put the atolls together
+all_atolls <- st_multipolygon(x=list(glovers,lighthouse,turneffe)) %>%
+  st_sfc(crs = 4326)
+
+# plot it all
+ggplot(all_atolls)+
+  geom_sf()+
+  geom_sf(data=barrier)+
+  theme(panel.background = element_rect(fill = "lightblue"))
+
+save(all_atolls,barrier,TNC_sim,file='../data/TNC_sim.RData')
+```
 
 ### Generate plots
 1) png file for use by SLiM
 2) figure showing reef and the SGS sampling sites, for reference
 ```{r}
-load('data/mmp_crop.RData')
-load('data/SGS_sites.RData')
+load('../data/TNC_sim.RData')
+load('../data/mmp_crop.RData')
+load('../data/SGS_sites.RData')
 
 #--------------------------------------------------------------------
 # Plot for SLiM
 #--------------------------------------------------------------------
 
-g <- ggplot(reef_sim)+
+g <- ggplot(barrier)+
   geom_sf(color='black',fill='black')+
+  geom_sf(data=all_atolls,color='black',fill='black')+
   labs(x=NULL,y=NULL)+
   coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
   theme(axis.ticks = element_blank(),
@@ -129,15 +179,16 @@ g <- ggplot(reef_sim)+
         panel.margin = unit(c(0, 0, 0, 0), "null"))
 
 # I'm not sure how big it should be, but keep it proportional
-ggsave(filename="map_SLiM.png",plot=g,width=round(dist_x)/10,height=round(dist_y)/10,units='cm')
+ggsave(filename="../data/map_SLiM.png",plot=g,width=round(dist_x)/10,height=round(dist_y)/10,units='cm')
 
 
 #--------------------------------------------------------------------
 #Reference plot
 #--------------------------------------------------------------------
 
-h <- ggplot(reef_sim)+
+h <- ggplot(barrier)+
   geom_sf(color='black',fill='black')+
+  geom_sf(data=all_atolls,color='black',fill='black')+
   geom_sf(data=sgs_points_sf,color='blue')+
   coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
   geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
@@ -146,7 +197,7 @@ h <- ggplot(reef_sim)+
         panel.border=element_blank(),
         plot.margin = unit(c(0, 0, 0, 0),"points"),
         panel.margin = unit(c(0, 0, 0, 0), "null"))
-ggsave(filename="map_reference.png",plot=h)
+ggsave(filename="../map_reference.png",plot=h)
 ```
 
 
@@ -155,8 +206,8 @@ This is Ne for gobies within the previously defined geographic extent.
 I'm setting up the model with that many habitable sponges, so assuming habitat was saturated when Naaykens and D'Aloia estimated De.
 ?? Effective vs actual population size? Can I just use Ne?
 ```{r}
-load('data/mmp_crop.RData')
-load('data/SGS_sites.RData')
+load('../data/mmp_crop.RData')
+load('../data/SGS_sites.RData')
 
 De_Naaykens <- 749 # effective pop density (individuals/km), Naaykens and D'Aloia 2022. This estimate is assuming random mating.
 
@@ -211,8 +262,8 @@ Ne_reef <- De_km2*area_reef # total number of individuals on reef
 ## Generate sampling site coordinates for SLiM to use
 SLiM's coordinate system is in km, with (0,0) in the SW corner.
 ```{r}
-load('data/SGS_sites.RData')
-load('data/mmp_crop.RData')
+load('../data/SGS_sites.RData')
+load('../data/mmp_crop.RData')
 
 sgs_sites_slim <- data.frame(x = rep(NA,nrow(sites_lonlat)), y=rep(NA,nrow(sites_lonlat)))
 
@@ -223,6 +274,6 @@ for(i in 1:nrow(sites_lonlat)){
 
 sgs_sites_slim=sgs_sites_slim/1000 # convert to km
 
-write_csv(sgs_sites_slim,file='data/sgs_sites_SLiM')
+write_csv(sgs_sites_slim,file='../data/sgs_sites_SLiM')
 ```
 

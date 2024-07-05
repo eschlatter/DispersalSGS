@@ -1,11 +1,12 @@
 species all initialize(){
 	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS");
+	defineConstant("simID", getSeed());	
 	
 	//!! all 4 of these need to be set
 	defineConstant("N_sponge",500); // population size (when habitat is saturated)
-	defineConstant("F_goby",150); // number of offspring per female
-	defineConstant("NMAX",1.0); // larval navigation distance
-	defineConstant("MATECHOICE_DIST",5.0); // mate choice radius
+	defineConstant("F_goby",250); // number of offspring per female
+	defineConstant("NMAX",0.5); // larval navigation distance
+	defineConstant("MATECHOICE_DIST",1); // mate choice radius = 10m
 	
 	initializeSLiMModelType("nonWF");
 	
@@ -28,7 +29,7 @@ species sponge initialize() {
 
 species goby initialize() {
 	initializeSpecies(avatar='G',color='blue');
-	initializeSLiMOptions(dimensionality="xy");
+	initializeSLiMOptions(keepPedigrees=T, dimensionality="xy");
 	initializeTreeSeq();
 	
 	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
@@ -36,7 +37,7 @@ species goby initialize() {
 	initializeGenomicElementType("g1", m1, 1.0);
 	initializeGenomicElement(g1, 0, 99999); // for right now, stick with one chromosome, but we'll add this in later
 	//initializeMutationRate(1e-7); // per base position per gamete. Lit value is 0.5e-8 per site per GENERATION (not gamete), so divide that by 2x the pop size used to generate the estimate? I'll check the paper again...
-	initializeMutationRate(0);	
+	initializeMutationRate(0);
 	initializeRecombinationRate(1.5e-8); // per base position per gamete, 1cM/Mbp=1e-8 in SLiM's units. Lit says 1.5cM/Mbp, so set to 1.5e-8.
 	initializeSex("A"); // I don't think we need X/Y chromosome level of detail
 
@@ -45,7 +46,7 @@ species goby initialize() {
 // set up populations and map
 ticks all 1 early() {
 	sponge.addSubpop("p1", N_sponge); //sponges
-	goby.addSubpop("p2",asInteger(round(0.75*N_sponge)));
+	goby.addSubpop("p2",asInteger(round(0.9*N_sponge)));
 	
 	// map png file generated from Rmd file
 	mapImage = Image("data/map_SLiM.png");
@@ -93,9 +94,7 @@ species goby reproduction(NULL,'F'){
 	
 	if (size(mate)){  //produce offspring
 		clutchSize = rpois(1,F_goby);
-		for(i in seqLen(clutchSize)){
-			subpop.addCrossed(individual,mate);
-		}
+		subpop.addCrossed(individual,mate,count=clutchSize);
 	}
 }
 
@@ -118,9 +117,9 @@ ticks all 2: early(){
 		}
 		else larva.tag=0; // larva dies
 	}
-	cat(size(p2.individuals)+' '); 										//1. total in population
-	cat(size(larvae)+' ');  													//2. total larvae	
-	cat(size(larvae[which(larvae.tag==1)])+' '); 						//3. find a sponge
+//	cat(size(p2.individuals)+' '); 										//1. total in population
+//	cat(size(larvae)+' ');  													//2. total larvae	
+//	cat(size(larvae[which(larvae.tag==1)])+' '); 						//3. find a sponge
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who didn't find a sponge
 }
 
@@ -133,20 +132,26 @@ species goby survival() {
 ticks all 2: late(){
 	i3.evaluate(c(p1,p2));
 	p2.individuals.tag=1; // survives, unless later specified
-	tot_sett=0;
+	// tot_sett=0;
 	for(spot in p1.individuals){
 		settlers = i3.nearestInteractingNeighbors(spot,count=size(p2.individuals),exerterSubpop=p2);
 		n_sett = size(settlers);
 		if(n_sett>1){ //if there's competition
 			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0;
 		}
-		tot_sett = tot_sett+n_sett;
+		// tot_sett = tot_sett+n_sett;
 	}
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
-	cat(tot_sett+' '); 														//4.  # competitors (same as # who found a sponge)
+//	cat(tot_sett+' '); 														//4.  # competitors (same as # who found a sponge)
 	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successfull recruits
 }
 
-ticks all 50 late() {
-goby.treeSeqOutput("output/final.trees");
+ticks all 500 late() {
+//	// assign tag values to be preserved
+//	inds = sortBy(goby.subpopulations.individuals, "pedigreeID");
+//	locations = inds.spatialPosition;
+//	// record tag values and pedigree IDs in metadata
+//	metadataDict = Dictionary("location", locations, "ids", inds.pedigreeID);
+	defineConstant("PATH", "output/" + "slim_" + simID + ".trees");
+	goby.treeSeqOutput(PATH, metadata=metadataDict);
 }

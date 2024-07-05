@@ -206,6 +206,7 @@ This is Ne for gobies within the previously defined geographic extent.
 I'm setting up the model with that many habitable sponges, so assuming habitat was saturated when Naaykens and D'Aloia estimated De.
 ?? Effective vs actual population size? Can I just use Ne?
 ```{r}
+load('../data/TNC_sim.RData')
 load('../data/mmp_crop.RData')
 load('../data/SGS_sites.RData')
 
@@ -224,7 +225,7 @@ transect_s <- destPoint(carriebow_coords,180,1000*41/2)
 # create an object that contains all the reef within that lat/lon
 # that includes Glover's and a bunch of lagoon, so I'm cropping those out: xmax=-88 to exclude Glover's, xmin=-88.08 to exclude lagoon
 ### !! This is a pretty rough method and I don't like it, but I'll go with it for now. A better map would help.
-parentage_transect <- st_crop(reef_sim,xmin=-88.08,xmax=-88,ymin=transect_s[2],ymax=transect_n[2])
+parentage_transect <- st_crop(TNC_sim,xmin=-88.08,xmax=-88,ymin=transect_s[2],ymax=transect_n[2])
 # here's what it looks like:
 ggplot(parentage_transect)+
   geom_sf()+
@@ -247,12 +248,12 @@ area_parentage_1km <- area_parentage/41
 # 2. Find the total area of reef (km^2) on which sponges will be distributed
 #--------------------------------------------------------------------
 
-area_reef <- sum(st_area(reef_sim))
+area_reef <- sum(st_area(TNC_sim))
 units(area_reef) <- "km^2"
-#Looking at a map, ~701km^2 (a box 26km on each side) seems about right for the total reef area
+#Looking at a map, ~256km^2 (a box 16km on each side) seems about right for the total reef area
 
 #--------------------------------------------------------------------
-# 3. Total number of individuals on the reef 
+# 3. Total number of individuals on the reef = 419998
 #--------------------------------------------------------------------
 
 De_km2 <- De_Naaykens/area_parentage_1km # density per km^2 = (individuals)/(linear km) * (linear km)/(km^2)
@@ -265,14 +266,14 @@ SLiM's coordinate system is in km, with (0,0) in the SW corner.
 load('../data/SGS_sites.RData')
 load('../data/mmp_crop.RData')
 
-sgs_sites_slim <- data.frame(x = rep(NA,nrow(sites_lonlat)), y=rep(NA,nrow(sites_lonlat)))
+sgs_sites_slim <- data.frame(x = sites_lonlat[,1], y=sites_lonlat[,2])
 
 for(i in 1:nrow(sites_lonlat)){
-  sgs_sites_slim$x[i] = distGeo(sites_lonlat[i,],c(min_lon,sites_lonlat[i,2]))
-  sgs_sites_slim$y[i] = distGeo(sites_lonlat[i,],c(sites_lonlat[i,1],min_lat))
+  sgs_sites_slim$x[i] = distGeo(sites_lonlat[i,],c(min_lon,sites_lonlat[i,2]))/1000
+  sgs_sites_slim$y[i] = distGeo(sites_lonlat[i,],c(sites_lonlat[i,1],min_lat))/1000
 }
 
-sgs_sites_slim=sgs_sites_slim/1000 # convert to km
+sgs_sites_slim <- mutate(sgs_sites_slim, Site = sgs_points_sf$Site,n_SNP = sgs_points_sf$n_SNP, Region = sgs_points_sf$Region)
 
 write_csv(sgs_sites_slim,file='../data/sgs_sites_SLiM')
 ```

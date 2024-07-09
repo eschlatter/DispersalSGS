@@ -2,11 +2,9 @@ species all initialize(){
 	//setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
 	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis");
 	defineConstant("simID", getSeed());
-	defineConstant("simplInt", 20);
-   
-  	setSeed(4);
+	createDirectory(("../output/" + simID));
 	
-	//!! all 4 of these need to be set
+	// biological parameters
 	defineConstant("N_sponge",50000); // population size (when habitat is saturated)
 	defineConstant("F_goby",50); // number of offspring per female
 	defineConstant("NMAX",0.2); // larval navigation distance
@@ -16,11 +14,11 @@ species all initialize(){
 	
 	// larvae looking for sponges
 	initializeInteractionType(1,"xy",maxDistance=NMAX);
-	i1.setInteractionFunction("f",1.0);   //think about this
+	i1.setInteractionFunction("l",1.0);
 	
 	// females looking for mates
 	initializeInteractionType(2,"xy",maxDistance=MATECHOICE_DIST,sexSegregation='FM');
-	i2.setInteractionFunction("f",1.0);   //think about this
+	i2.setInteractionFunction("l",1.0);
 	
 	//sponges checking for settlers
 	initializeInteractionType(3,"xy",maxDistance=0);
@@ -34,7 +32,7 @@ species sponge initialize() {
 species goby initialize() {
 	initializeSpecies(avatar='G',color='blue');
 	initializeSLiMOptions(dimensionality="xy");
-	initializeTreeSeq(simplificationInterval=asInteger(simplInt));
+	initializeTreeSeq(simplificationInterval=5); // simplify the tree sequence every 5 ticks
 	
 	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
 	m1.convertToSubstitution = T;
@@ -53,12 +51,12 @@ ticks all 1 early() {
 	
 	// map png file generated from Rmd file
 	mapImage = Image("../data/map_SLiM.png");
-	p1.setSpatialBounds(c(0.0, 0.0, 95.648, 220.646)); // distances in km: from dist_x and dist_y in Rmd file
+	p1.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
 	map = p1.defineSpatialMap("bbr", "xy", mapImage.floatB,
 		valueRange=c(0.0, 1.0), colors=c("black", "white"));
 	defineConstant("BBR", map);
 	
-	p2.setSpatialBounds(c(0.0, 0.0, 95.648, 220.646)); // distances in km: from dist_x and dist_y in Rmd file
+	p2.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
 	map = p2.defineSpatialMap("bbr", "xy", mapImage.floatR,
 		valueRange=c(0.0, 1.0), colors=c("black", "white"));
 	
@@ -86,10 +84,23 @@ ticks all 1 early() {
 	p2.individuals.setSpatialPosition(positions);
 	
 	defineConstant("start",clock());
+	
 }
+
+// log file. Wait until the simulation's going, so any global variables we need are defined, etc.
+ticks all 3 early(){	
+	log = community.createLogFile(("../output/" + simID + "/log_" + simID + ".txt"),logInterval=1000);
+	log.addCycle(goby);
+	log.addCustomColumn("popsize","popsize;");
+	//log.addCustomColumn("nomate","nomate;");
+	//log.addCustomColumn("foundsponge","foundsponge;");
+	defineGlobal("SO_PATH", "../output/" + simID + "/so_" + simID + "_sponge");
+	sponge.outputFull(filePath = SO_PATH);
+	}
 
 ticks goby 2: first(){
 	i2.evaluate(p2);
+	defineGlobal('popsize',size(p2.individuals)); 	//  OUTPUT: total successful recruits
 }
 
 // reproduction
@@ -98,19 +109,17 @@ species goby reproduction(NULL,'F'){
 	if (size(mate)){  //produce offspring
 		clutchSize = rpois(1,asInteger(F_goby));
 		subpop.addCrossed(individual,mate,count=clutchSize);
-		individual.tagL0 = F;
+		//individual.tagL0 = F; // OUTPUT: track how many found mates
 	}
-	else individual.tagL0 = T;
+//	else individual.tagL0 = T; // OUTPUT: track how many found mates
 }
 
 //displacement
 ticks goby 2: early() {
 	moms = p2.subsetIndividuals(sex="F",minAge=1);
-	defineGlobal("nomate", sum(moms.tagL0)/size(moms));
-//	cat(nomate + ' ');  // keep track of how many didn't find a mate
-//	cat(nomate + '/' + size(moms) + '=' + nomate/size(moms) + ' ');  // keep track of how many didn't find a mate
+//	defineGlobal("nomate", sum(moms.tagL0)/size(moms));  // OUTPUT: track how many didn't find mates
 	larvae = p2.subsetIndividuals(maxAge=0);
-	p2.deviatePositions(larvae,"stopping",INF,"e",0.36); //need to figure out what to do about the boundary condition here
+	p2.deviatePositions(larvae,"stopping",INF,"e",0.36);
 }
 
 //find a sponge
@@ -126,52 +135,35 @@ ticks all 2: early(){
 		}
 		else larva.tag=0; // larva dies
 	}
-//	cat(size(p2.individuals)+' '); 										//1. total in population
-//	cat(size(larvae)+' ');  													//2. total larvae	
-//	cat(size(larvae[which(larvae.tag==1)])+' '); 						//3. find a sponge
+//	defineGlobal('foundsponge',size(larvae[which(larvae.tag==1)])/size(larvae)); // OUTPUT: track how many found a sponge
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who didn't find a sponge
 }
 
 // nonoverlapping generations
 species goby survival() {
-	return (individual.age == 0);
+	return(individual.age == 0);
 }
 
 //competition
 ticks all 2: late(){
 	i3.evaluate(c(p1,p2));
 	p2.individuals.tag=1; // survives, unless later specified
-	// tot_sett=0;
 	for(spot in p1.individuals){
 		settlers = i3.nearestInteractingNeighbors(spot,count=size(p2.individuals),exerterSubpop=p2);
 		n_sett = size(settlers);
 		if(n_sett>1){ //if there's competition
 			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0;
 		}
-		// tot_sett = tot_sett+n_sett;
 	}
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
-//	cat(tot_sett+' '); 														//4.  # competitors (same as # who found a sponge)
-//	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successful recruits
 }
 
-//ticks all seq(from=20,to=40,by=10) late() {
-ticks all 50 late() {
-//	// assign tag values to be preserved
-//	inds = sortBy(goby.subpopulations.individuals, "pedigreeID");
-//	locations = inds.spatialPosition;
-//	// record tag values and pedigree IDs in metadata
-//	metadataDict = Dictionary("location", locations, "ids", inds.pedigreeID);
-	defineGlobal("PATH", "../output/" + "slim_" + simID + "tick_" + community.tick + ".trees");
-	goby.treeSeqOutput(PATH);
-
-//	cat('OUT: ');	
-//	cat(N_sponge);
-//	cat(',' + F_goby);
-//	cat(',' + NMAX);
-//	cat(',' + MATECHOICE_DIST);
-// cat(',' + nomate);
-// cat(',' + size(p2.subsetIndividuals(maxAge=0)));
-	cat('OUT: ' + simplInt + ', ' + (clock()-start));
+//ticks all seq(from=20000,to=500000,by=20000) late() {
+ticks all seq(from=4,to=8,by=2) late() {
+	defineGlobal("TS_PATH", "../output/" + simID + "/ts_" + simID + "_t" + community.tick + ".trees");
+	goby.treeSeqOutput(TS_PATH);	
+	defineGlobal("SO_PATH", "../output/" + simID + "/so_" + simID + "_t" + community.tick);
+	goby.outputFull(filePath = SO_PATH);
 	
+	catn(simID + ": " + community.tick);
 }

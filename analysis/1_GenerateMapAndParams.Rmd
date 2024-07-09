@@ -94,7 +94,7 @@ dist_x <- (dist_x1+dist_x2)/2/1000
 # not a problem in the y-direction, because distance N-S is the same, no matter which longitude you're on
 dist_y <- distGeo(c(min_lon,min_lat),c(min_lon,max_lat))/1000
 
-save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
+#save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
 ```
 
 ### TNC Caribbean dataset:
@@ -245,17 +245,6 @@ area_parentage_1km <- area_parentage/41
 #--------------------------------------------------------------------
 # 2. Find the total area of reef (km^2) on which sponges will be distributed
 #--------------------------------------------------------------------
-
-ggplot(TNC_sim)+
-  geom_sf(color='black',fill='black')+
-  geom_sf(data=sgs_points_sf,color='blue')+
-  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
-  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
-  theme(panel.background = element_rect(fill = "lightblue"),
-        panel.grid.major = element_blank(),
-        panel.border=element_blank(),
-        plot.margin = unit(c(0, 0, 0, 0),"points"),
-        panel.margin = unit(c(0, 0, 0, 0), "null"))
 
 area_reef <- sum(st_area(barrier))+sum(st_area(all_atolls))
 units(area_reef) <- "km^2"

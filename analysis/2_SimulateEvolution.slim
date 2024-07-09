@@ -2,6 +2,7 @@ species all initialize(){
 	//setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
 	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis");
 	defineConstant("simID", getSeed());
+	defineConstant("simplInt", 20);
    
   	setSeed(4);
 	
@@ -33,8 +34,7 @@ species sponge initialize() {
 species goby initialize() {
 	initializeSpecies(avatar='G',color='blue');
 	initializeSLiMOptions(dimensionality="xy");
-	initializeTreeSeq(simplificationInterval=500);
-//	initializeTreeSeq(simplificationInterval=asInteger(simplInt));
+	initializeTreeSeq(simplificationInterval=asInteger(simplInt));
 	
 	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
 	m1.convertToSubstitution = T;
@@ -107,7 +107,7 @@ species goby reproduction(NULL,'F'){
 ticks goby 2: early() {
 	moms = p2.subsetIndividuals(sex="F",minAge=1);
 	defineGlobal("nomate", sum(moms.tagL0)/size(moms));
-	cat(nomate + ' ');  // keep track of how many didn't find a mate
+//	cat(nomate + ' ');  // keep track of how many didn't find a mate
 //	cat(nomate + '/' + size(moms) + '=' + nomate/size(moms) + ' ');  // keep track of how many didn't find a mate
 	larvae = p2.subsetIndividuals(maxAge=0);
 	p2.deviatePositions(larvae,"stopping",INF,"e",0.36); //need to figure out what to do about the boundary condition here
@@ -152,7 +152,7 @@ ticks all 2: late(){
 	}
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
 //	cat(tot_sett+' '); 														//4.  # competitors (same as # who found a sponge)
-	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successful recruits
+//	catn(size(p2.subsetIndividuals(maxAge=0))); 							//5.  total successful recruits
 }
 
 //ticks all seq(from=20,to=40,by=10) late() {
@@ -172,6 +172,6 @@ ticks all 50 late() {
 //	cat(',' + MATECHOICE_DIST);
 // cat(',' + nomate);
 // cat(',' + size(p2.subsetIndividuals(maxAge=0)));
-// catn(',' + (clock()-start));
+	cat('OUT: ' + simplInt + ', ' + (clock()-start));
 	
 }

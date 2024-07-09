@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/eschlatter/Dropbox/DispersalSGS")
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
 library(tidyverse)
 library(sf)
 library(sp)
@@ -30,7 +30,7 @@ sgs_points_sf <- st_as_sf(sgs_points_df)
 spgeo <- spTransform(sgs_points, CRS("+proj=longlat +datum=WGS84"))
 sites_lonlat <- coordinates(spgeo)
 sgs_points_df <- cbind(sgs_points_df,sites_lonlat)
-save(sgs_points,sgs_points_df,sgs_points_sf,sites_lonlat,file='data/SGS_sites.RData')
+save(sgs_points,sgs_points_df,sgs_points_sf,sites_lonlat,file='../data/SGS_sites.RData')
 ```
 
 ### Import data: Global Distribution of Coral Reefs/Millennium Coral Reef Mapping Project
@@ -52,7 +52,6 @@ ggplot(mmp_shp)+
 # this is the one we want. Polygons/multipolygons classified as coral. Subclassifications don't seem very helpful.
 mmpy_shp <- read_sf("../data/14_001_WCMC008_CoralReefs2021_v4_1/01_Data/WCMC008_CoralReef2021_Py_v4_1.shp")
 
-
 # pull out the general area we want and save it
 sf_use_s2(FALSE) # otherwise, trying to crop gives an error due to spherical geometry
 bze <- st_crop(mmpy_shp,xmin=-88.5,xmax=-87,ymin=16,ymax=19)
@@ -67,14 +66,14 @@ I'm using 16.4km (i.e., max goby dispersal distance) outside of the SGS sampling
 load('../data/mmp_bze.RData')
 load('../data/SGS_sites.RData')
 
-#sites that are the farthest north, south, east and west
-borders=sites_lonlat[c(1,15,19,33),]
+#sites that are the farthest north (B1), south (B24), east (L4) and west (B25)
+borders=sites_lonlat[c(1,39,33,40),]
 
 # points 16.4km N,S,E,W of those (respectively)
 bord_n <- destPoint(borders[1,],0,16.4*1000)
-bord_s <- destPoint(borders[3,],180,16.4*1000)
-bord_w <- destPoint(borders[2,],270,16.4*1000)
-bord_e <- destPoint(borders[4,],90,16.4*1000)
+bord_s <- destPoint(borders[2,],180,16.4*1000)
+bord_e <- destPoint(borders[3,],90,16.4*1000)
+bord_w <- destPoint(borders[4,],270,16.4*1000)
 
 # get the max lat and lon of those points. These will be the boundaries of our map.
 bords <- rbind(bord_n,bord_s,bord_w,bord_e)
@@ -95,7 +94,7 @@ dist_x <- (dist_x1+dist_x2)/2/1000
 # not a problem in the y-direction, because distance N-S is the same, no matter which longitude you're on
 dist_y <- distGeo(c(min_lon,min_lat),c(min_lon,max_lat))/1000
 
-#save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
+save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
 ```
 
 ### TNC Caribbean dataset:
@@ -106,9 +105,10 @@ I'm going to use this dataset instead, at least for now, because the lagoon and 
 load('../data/mmp_crop.RData')
 
 TNC <- read_sf('../data/TNC_CoralReefs.geojson')
-TNC_sub <- filter(TNC,FID %in% c(24,25,26,29,31))
+TNC_sub <- filter(TNC,FID %in% c(24,25,26,29,31,59,64))  # include 59 (southern lagoon) for now, to make cropping possible, then remove it afterward
 sf_use_s2(FALSE)
 TNC_sim <- st_crop(TNC_sub,xmin=min_lon,xmax=max_lon,ymin=min_lat,ymax=max_lat,crop=TRUE)
+TNC_sim <- filter(TNC_sim,FID %in% c(24,25,26,29,31))
 save(TNC_sim,file='../data/TNC_sim.RData')
 ```
 
@@ -223,8 +223,6 @@ carriebow_coords <- sites_lonlat[15,] # Carrie Bow is site B16 (15th row of site
 transect_n <- destPoint(carriebow_coords,0,1000*41/2) # get lat/lon 20.5km N and S of Carrie Bow
 transect_s <- destPoint(carriebow_coords,180,1000*41/2)
 # create an object that contains all the reef within that lat/lon
-# that includes Glover's and a bunch of lagoon, so I'm cropping those out: xmax=-88 to exclude Glover's, xmin=-88.08 to exclude lagoon
-### !! This is a pretty rough method and I don't like it, but I'll go with it for now. A better map would help.
 parentage_transect <- st_crop(TNC_sim,xmin=-88.08,xmax=-88,ymin=transect_s[2],ymax=transect_n[2])
 # here's what it looks like:
 ggplot(parentage_transect)+
@@ -248,9 +246,20 @@ area_parentage_1km <- area_parentage/41
 # 2. Find the total area of reef (km^2) on which sponges will be distributed
 #--------------------------------------------------------------------
 
-area_reef <- sum(st_area(TNC_sim))
+ggplot(TNC_sim)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='blue')+
+  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
+  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
+  theme(panel.background = element_rect(fill = "lightblue"),
+        panel.grid.major = element_blank(),
+        panel.border=element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null"))
+
+area_reef <- sum(st_area(barrier))+sum(st_area(all_atolls))
 units(area_reef) <- "km^2"
-#Looking at a map, ~256km^2 (a box 16km on each side) seems about right for the total reef area
+#Looking at a map, ~269km^2 (a box ~16km on each side) seems about right for the total reef area
 
 #--------------------------------------------------------------------
 # 3. Total number of individuals on the reef = 419998

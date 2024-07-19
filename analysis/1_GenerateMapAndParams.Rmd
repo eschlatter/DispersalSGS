@@ -94,7 +94,7 @@ dist_x <- (dist_x1+dist_x2)/2/1000
 # not a problem in the y-direction, because distance N-S is the same, no matter which longitude you're on
 dist_y <- distGeo(c(min_lon,min_lat),c(min_lon,max_lat))/1000
 
-#save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
+save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_crop.RData')
 ```
 
 ### TNC Caribbean dataset:

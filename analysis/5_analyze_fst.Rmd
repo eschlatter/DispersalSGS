@@ -1,0 +1,271 @@
+---
+title: "Untitled"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
+#treefile = "../output/ts_8238198510834684392_t160000"
+```
+
+Load empirical FST
+```{r}
+fst_emp <- read.csv('../data/FST_empirical.csv',header=T)
+fst_emp_long <- pivot_longer(fst_emp,cols=2:ncol(fst_emp),names_to=c('site2'))
+fst_emp_long$sites <- NA
+for(i in 1:nrow(fst_emp_long)){
+  fst_emp_long$sites[i] <- paste(sort(as.matrix(fst_emp_long[i,1:2])),collapse='.')
+}
+fst_emp_long <- filter(fst_emp_long,!is.na(value)) %>%
+  rename(emp_fst=value)
+fst_emp <- fst_emp_long
+rm(fst_emp_long)
+```
+
+Load simulated FSTs
+```{r}
+files <- list.files(path='../output/FSTs_240k') %>% strsplit(" ")
+fst_sims <- list()
+for (i in 1:length(files)) {
+   load(paste0('../output/FSTs_240k/',files[[i]])) # load fst matrix
+  
+   fst_sim <- as.data.frame(fsts) %>%
+     rownames_to_column(var='site1')
+   fst_sim <- pivot_longer(fst_sim,cols=2:ncol(fst_sim),names_to=c('site2'))
+   
+   fst_sim$sites <- NA
+   for(j in 1:nrow(fst_sim)){
+     fst_sim$sites[j] <- paste(sort(as.matrix(fst_sim[j,1:2])),collapse='.')
+   }
+   fst_sim <- filter(fst_sim,!is.na(value)) %>%
+     rename(sim_fst=value)
+     #rename_with(~paste0('sim_fst_',i),value)
+   
+   assign(paste0('fst_sim_',i), fst_sim) # save as "fst_sim_i"
+   fst_sims[[i]] <- fst_sim
+}
+```
+
+Combine simulated and empirical
+```{r}
+# combine simulation runs into a long table, with a column for the simulation number
+all_fst_sim <- data.frame(site1=factor(), site2=factor(), sim_fst=numeric(), sites=factor(), sim=factor())
+for(i in 1:length(fst_sims)){
+  this_sim <- fst_sims[[i]]
+  all_fst_sim <- rbind(all_fst_sim,mutate(this_sim, sim=as.factor(i)))
+}
+
+# add empirical data as its own column
+all_fst_both <- full_join(all_fst_sim,fst_emp,by='sites') %>%
+  select(sites,site1,site2=site2.x,sim,sim_fst,emp_fst) %>%
+  filter(!is.na(emp_fst))
+
+# group by site pair (across simulations)
+all_fst_group <- group_by(all_fst_both,sites) %>%
+  summarize(emp_fst=first(emp_fst),site1=first(site1),site2=first(site2),
+            sim_med=median(sim_fst),sim_sd=sd(sim_fst),sim_min=min(sim_fst),sim_max=max(sim_fst))
+
+# add extra columns for site, population, and population pair, to make exploratory plotting easier
+site_list <- unique(c(fst_emp$X,fst_emp$site2))
+site_list <- c(site_list[length(site_list)],site_list[1:(length(site_list)-1)]) # put them in order
+for(i in site_list){
+  all_fst_group <- mutate(all_fst_group,newsite=(i==site1 | i==site2)) %>%
+    rename_with(~paste0(i),newsite)
+}
+for(i in c('B','T','G','L')){
+  all_fst_group <- mutate(all_fst_group,newsite=grepl(i,sites)) %>%
+    rename_with(~paste0(i),newsite)
+}
+all_fst_group <- mutate(all_fst_group,first_pop=substr(sites,1,1)) %>%
+  mutate(second_pop=substr(sub('.*\\.','',sites),1,1)) %>%
+  mutate(both_pops=paste0(first_pop,second_pop))
+
+save(all_fst_group,file='../output/FST_all_240k.RData')
+```
+
+
+```{r}
+load('../output/FST_all_300k.RData')
+
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med))+
+  geom_point()+
+  xlab('Empirical FST')+
+  ylab('Simulated FST (median of 10 sims)')
+```
+
+
+```{r}
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  xlab('Empirical FST')+
+  ylab('Simulated FST (median of 10 sims)')+
+  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('300k generations')
+```
+
+```{r}
+ggplot(filter(all_fst_group,both_pops %in% c('TT','GG','LL')),aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_pointrange(aes(ymin=sim_min,ymax=sim_max,color=both_pops),position=position_jitter(width=0.0001))+
+  xlab('Empirical FST')+
+  ylab('Simulated FST (median of 10 sims)')+
+  geom_smooth(method='lm',se=FALSE)
+```
+
+
+Looks like there's something going on with the Barrier-Lighthouse group. Some simulated values are much larger than others, for similar empirical values.
+First check: is it just among-sim variation?
+```{r}
+BL <- filter(all_fst_group,both_pops=="BL")# %>% select(sites,emp_fst,sim_med,sim_sd,sim_min,sim_max)
+ggplot(BL,aes(x=emp_fst,y=sim_med))+
+  geom_pointrange(aes(ymin=sim_med-sim_sd,ymax=sim_med+sim_sd),
+                  position=position_jitter(width=0.0008))+
+  geom_point(data=all_fst_group,aes(x=emp_fst,y=sim_med),color='gray')
+```
+Nope. There are definitely some points that are distinct from the rest. Figure out which ones they are:
+It's B1, B2, and B3 with Lighthouse.
+```{r}
+filter(BL,sim_med>0.175)
+
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,color=(L & (B1 | B2 | B3 | B5))))+
+  geom_point()
+```
+
+```{r}
+## highlight a single point
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med))+
+  geom_point(size=1)+
+  geom_point(data=filter(all_fst_group,B10==TRUE & T6==TRUE),aes(x=emp_fst,y=sim_med),color='red')
+```
+
+
+
+```{r}
+## highlight the points from one site
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
+  geom_point(size=1.1)+
+  geom_smooth(method='lm',se=FALSE)+
+  geom_point(data=filter(all_fst_group,T6==TRUE),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
+  ggtitle('T6')
+```
+```{r}
+## highlight the points from one site
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
+  geom_point(size=1.1)+
+  geom_smooth(method='lm',se=FALSE)+
+  geom_point(data=filter(all_fst_group,(B1==TRUE | B2==TRUE | B3==TRUE)),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
+  ggtitle('B1,B2,B3')
+```
+
+
+```{r}
+hilite_site="B20"
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
+  geom_point(size=1.1)+
+  geom_smooth(method='lm',se=FALSE)+
+  geom_point(data=filter(all_fst_group,B20==TRUE),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
+  ggtitle(hilite_site)
+```
+
+
+```{r}
+bigs <- filter(all_fst_group,sim_med>0.2) %>% select(sites,emp_fst,sim_med,sim_sd)
+ggplot(bigs,aes(x=emp_fst,y=sim_med))+
+  geom_point()+
+  geom_errorbar(aes(ymin=sim_med-sim_sd,ymax=sim_med+sim_sd))+
+  geom_point(data=all_fst_group,aes(x=emp_fst,y=sim_med))
+```
+
+
+## Check that, at the end of the simulation, there's still a reasonable spatial distribution of individuals
+
+```{r}
+## Read in and process the "individuals" .csv from tskit (but don't subset it to get just the sampled ones)
+inds <- read_csv(file='../output/ts_8238198510834684392_t240000.csv',col_names=F,show_col_types=FALSE)
+inds <- as.data.frame(t(inds))
+inds <- separate_wider_delim(inds,cols=V1,delim=',',names=c('flags','x','y','zero','parents','array','dtype','pedID','pedp1','pedp2','age','subpop','sex','flags2')) %>%
+  dplyr::select(x,y,pedID,pedp1,pedp2,age,sex)
+inds <- mutate(inds,x=str_trim(str_sub(x,start=18)),pedID=str_trim(str_sub(pedID,-8,-1)),
+               pedp1=str_trim(str_sub(pedp1,-8,-1)),pedp2=str_trim(str_sub(pedp2,-8,-1)),
+               age=str_trim(str_sub(age,-1,-1)),sex=str_trim(str_sub(sex,-1,-1)))
+inds <- mutate(inds,id=0:(nrow(inds)-1),x=as.numeric(x),y=as.numeric(y),age=as.numeric(age))
+
+## Messy convert SLiM's x and y to lon and lat. (Messy is good enough, in this case)
+load('../data/mmp_crop.RData') # use this to convert x and y into lat and lon
+inds <- mutate(inds,lon = min_lon+x*(max_lon-min_lon)/dist_x, lat = min_lat+y*(max_lat-min_lat)/dist_y)
+
+## Plot all individuals (in yellow) on top of the reference map
+load('../data/TNC_sim.RData')
+load('../data/SGS_sites.RData')
+ggplot(barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=all_atolls,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='blue')+
+  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
+  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
+  theme(panel.background = element_rect(fill = "lightblue"),
+        panel.grid.major = element_blank(),
+        panel.border=element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null"))+
+  geom_point(data=inds,aes(x=lon,y=lat),color='yellow', size=0.01)
+# save it as a really big png: e.g., 7070x6940, and zoom in, and you can see individuals distributed throughout the reef area.
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Scratch
+Load a single empirical FST
+```{r,eval=FALSE}
+load(file=paste0(treefile,"_FST.RData"))
+#load(file="../output/ts_4399080398350530317_t160000_FST.RData")
+fst_sim <- as.data.frame(fsts) %>%
+  rownames_to_column(var='site1')
+rm(fsts)
+
+fst_sim_long <- pivot_longer(fst_sim,cols=2:ncol(fst_sim),names_to=c('site2'))
+fst_sim_long$sites <- NA
+for(i in 1:nrow(fst_sim_long)){
+  fst_sim_long$sites[i] <- paste(sort(as.matrix(fst_sim_long[i,1:2])),collapse='.')
+}
+fst_sim_long <- filter(fst_sim_long,!is.na(value)) %>%
+  rename(sim_fst=value)
+```
+
+```{r}
+all_fst_sim <- data.frame(sites=fst_sim_1$sites)
+# add each fst dataset as a column
+for(i in 1:length(fst_sims)){
+  all_fst_sim <- full_join(all_fst_sim,fst_sims[[i]]) %>% select(-c(site1,site2))  
+}
+
+# calculate mean, median, sd of all the fst columns for each row (mutate)
+just_data <- select(all_fst_sim,contains('sim_fst_'))
+all_fst_sim$median <- apply(just_data,1,median)
+all_fst_sim$sd <- apply(just_data,1,sd)
+```
+
+```{r}
+fst_all <- full_join(fst_emp_long,fst_sim_long,by='sites') %>%
+  select(sites,emp_fst,sim_fst) %>%
+  filter(!is.na(emp_fst))
+
+ggplot(data=fst_all,aes(x=emp_fst,y=sim_fst))+
+  geom_point()+
+  xlab('Empirical FST')+
+  ylab('Simulated FST')
+```

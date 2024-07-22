@@ -11,10 +11,9 @@ https://docs.google.com/spreadsheets/d/1zxMT583BmHr4OSTqSfwo9JgcTCxLh0YJXrepr66i
 - `analysis`: folder containing scripts to perform data processing, simulation, and analysis
   - `1_GenerateMapAndParams.Rmd`: Preliminary data processing to generate map and parameter values for SLiM
   - `2_SimulateEvolution.slim`: SLiM simulation model
-  - `3_AddMutations.py`: Process simulation output -- in particular, add neutral mutations.
-
-- `output`: folder containing output files from analyses
-    - `final.trees`: output of step 2: tree sequence recording of simulation
-    - `final_overlaid.trees`: output of step 3: tree sequence with neutral mutations overlaid
+  - `3_ProcessTS.py`: Process simulation output: recapitate tree sequence (if it hasn't reached coalescence), and add neutral mutations.
+  - `4_FilterAndFST.R`: Sample individuals from the simulated data, and calculate simulated pairwise FST among sites
+  - `5_analyze_fst.Rmd`: Compare simulated and empirical FST.
 
 - `map_reference.png`: A map of the study area and sampling sites, for visual reference
+

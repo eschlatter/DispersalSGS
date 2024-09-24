@@ -1,0 +1,241 @@
+---
+title: "7_AnalyzeFST"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
+#treefile = "../output/ts_8238198510834684392_t160000"
+fst_all_file = '../output/500k/FST_all.RData'
+```
+
+```{r}
+########## Load empirical FSTs
+
+fst_emp <- read.csv('../data/FST_empirical.csv',header=T)
+fst_emp_long <- pivot_longer(fst_emp,cols=2:ncol(fst_emp),names_to=c('site2'))
+fst_emp_long$sites <- NA
+for(i in 1:nrow(fst_emp_long)){
+  fst_emp_long$sites[i] <- paste(sort(as.matrix(fst_emp_long[i,1:2])),collapse='.')
+}
+fst_emp_long <- filter(fst_emp_long,!is.na(value)) %>%
+  rename(emp_fst=value)
+fst_emp <- fst_emp_long
+rm(fst_emp_long)
+
+########## Load simulated FSTs
+
+files <- list.files(path='../output/500k/FSTs') %>% strsplit(" ")
+fst_sims <- list()
+for (i in 1:length(files)) {
+   load(paste0('../output/500k/FSTs/',files[[i]])) # load fst matrix
+   assign(paste0('fst_sim_',i), fst_sim) # save as "fst_sim_i"
+   fst_sims[[i]] <- fst_sim
+}
+
+########## Combine simulated and empirical
+
+# combine simulation runs into a long table, with a column for the simulation number
+all_fst_sim <- data.frame(site1=factor(), site2=factor(), sim_fst=numeric(), sites=factor(), sim=factor())
+for(i in 1:length(fst_sims)){
+  this_sim <- fst_sims[[i]]
+  all_fst_sim <- rbind(all_fst_sim,mutate(this_sim, sim=as.factor(i)))
+}
+
+# add empirical data as its own column
+all_fst_both <- full_join(all_fst_sim,fst_emp,by='sites') %>%
+  select(sites,site1,site2=site2.x,sim,sim_fst,emp_fst) %>%
+  filter(!is.na(emp_fst))
+
+########## Group by site pair (across simulations)
+
+all_fst_group <- group_by(all_fst_both,sites) %>%
+  summarize(emp_fst=first(emp_fst),site1=first(site1),site2=first(site2),
+            sim_med=median(sim_fst),sim_sd=sd(sim_fst),sim_min=min(sim_fst),sim_max=max(sim_fst))
+
+# add extra columns for site, population, and population pair, to make exploratory plotting easier
+site_list <- unique(c(fst_emp$X,fst_emp$site2))
+site_list <- c(site_list[length(site_list)],site_list[1:(length(site_list)-1)]) # put them in order
+for(i in site_list){
+  all_fst_group <- mutate(all_fst_group,newsite=(i==site1 | i==site2)) %>%
+    rename_with(~paste0(i),newsite)
+}
+for(i in c('B','T','G','L')){
+  all_fst_group <- mutate(all_fst_group,newsite=grepl(i,sites)) %>%
+    rename_with(~paste0(i),newsite)
+}
+all_fst_group <- mutate(all_fst_group,first_pop=substr(sites,1,1)) %>%
+  mutate(second_pop=substr(sub('.*\\.','',sites),1,1)) %>%
+  mutate(both_pops=paste0(first_pop,second_pop))
+
+save(all_fst_group,file=fst_all_file)
+```
+
+Get pairwise distance between sites (only need to do this once)
+```{r, eval=FALSE}
+load(fst_all_file)
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+
+sitepair_dists <- dplyr::select(all_fst_group,sites,site1,site2)
+sitepair_dists <- left_join(sitepair_dists,sample_sites,by=c('site1' ='Site'),keep=FALSE) %>%
+  select(sites,site1,site2,site1.x=x,site1.y=y) %>%
+  left_join(sample_sites,by=c('site2' ='Site'),keep=FALSE) %>%
+  select(sites,site1,site2,site1.x,site1.y,site2.x=x,site2.y=y) %>%
+  mutate(dist=sqrt((site1.x-site2.x)^2+(site1.y-site2.y)^2))
+
+save(sitepair_dists, file='../data/sitepair_dists.RData')
+
+```
+
+```{r}
+library(ggpattern)
+load(fst_all_file)
+
+all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
+all_fst_group$both_pops_bt <- factor(all_fst_group$both_pops_bt,levels=c('BB','GG','LL','BG','BL','GL'))
+
+#'#fc8d59' -orange (G)
+#'#ffffbf' -yellow (L)
+#'#91bfdb' -blue (B)
+
+ggplot(data=all_fst_group,aes(x=sim_med,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.05,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+    theme(legend.position='bottom')+
+  xlab('Simulated FST')+
+  guides(pattern_density = guide_legend(nrow = 3))
+
+ggplot(data=all_fst_group,aes(x=sim_med,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.03,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+
+ggplot(data=all_fst_group,aes(x=emp_fst,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.03,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+```
+
+Again, but let's do subsets
+```{r}
+load(fst_all_file)
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+
+fsts <- dplyr::select(all_fst_group,sites,site1,site2,emp_fst,sim_med) %>%
+#  filter(!(site1 %in%c('B1','B2','B3'))&!(site2 %in%c('B1','B2','B3'))) %>%
+  left_join(sample_sites,by=c('site1'='Site')) %>%
+  dplyr::select(sites,site1,site2,emp_fst,sim_med,region1=Region) %>%
+  left_join(sample_sites,by=c('site2'='Site')) %>%
+  dplyr::select(sites,site1,site2,emp_fst,sim_med,region1,region2=Region) %>%
+  mutate(region1=case_match(region1,
+                            'barrier (northern)'~'N','barrier (central)'~'C',
+                            'Turneffe Atoll'~'T',"Glover's Atoll" ~ 'G','Lighthouse Atoll'~'L',
+                            .default='G')) %>%
+  mutate(region2=case_match(region2,
+                            'barrier (northern)'~'N','barrier (central)'~'C',
+                            'Turneffe Atoll'~'T',"Glover's Atoll" ~ 'G','Lighthouse Atoll'~'L',
+                            .default='G'))
+
+fsts_subset <- filter(fsts,(region1 %in% c('N','C','T'))&(region2 %in% c('N','C','T')))
+
+fsts_subset$regions <- NA
+for(j in 1:nrow(fsts_subset)){
+  fsts_subset$regions[j] <- paste(sort(as.matrix(fsts_subset[j,c('region1','region2')])),collapse='')
+  }
+
+fsts_subset$regions <- factor(fsts_subset$regions,levels=c('NN','CC','TT','CN','NT','CT'))
+
+#'#2b8cbe' -northern (N)
+#'#a6bddb' -central (C)
+#'#ece7f2' -turneffe (T)
+
+ggplot(data=fsts_subset,aes(x=sim_med,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(pattern_spacing=0.05,alpha=0.5,pattern_alpha=0.5)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  xlab('Simulated FST')+
+    theme_bw()+
+    theme(legend.position='bottom')+
+  xlab('Simulated FST')+
+  guides(pattern_density = guide_legend(nrow = 3))
+
+ggplot(data=fsts_subset,aes(x=sim_med,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(pattern_spacing=0.02,alpha=0.5,pattern_alpha=0.5)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+
+ggplot(data=fsts_subset,aes(x=emp_fst,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(bw=0.0005,pattern_spacing=0.02,alpha=0.6,pattern_alpha=0.6)+ # try bw=0.0005 to remove lumpiness
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  ylim(0,1000)+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+
+```
+
+Check IBD
+```{r}
+load(fst_all_file)
+load('../data/sitepair_dists.RData')
+
+all_fst_group <- left_join(all_fst_group,sitepair_dists,keep=FALSE) %>%
+  filter(both_pops=='BB')
+
+all_fst_group <- mutate(all_fst_group,
+                        emp_scale=emp_fst/(1-emp_fst),
+                        sim_scale=sim_med/(1-sim_med))
+
+ggplot(all_fst_group,aes(x=dist,y=sim_scale))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+
+ggplot(all_fst_group,aes(x=dist,y=sim_med))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+
+ggplot(all_fst_group,aes(x=dist,y=emp_scale))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+ggplot(all_fst_group,aes(x=dist,y=emp_fst))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+```

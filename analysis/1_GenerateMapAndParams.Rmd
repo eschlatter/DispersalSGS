@@ -114,6 +114,7 @@ save(TNC_sim,file='../data/TNC_sim.RData')
 
 ```{r,eval=FALSE}
 load('../data/TNC_sim.RData')
+load('../data/SGS_sites.RData')
 
 ## Get the barrier reef
 barrier <- TNC_sim[c(1,2,3,4),]$geometry
@@ -123,16 +124,201 @@ atolls=TNC_sim[5,]$geometry
 
 # glovers
 glovers <- st_polygon(atolls[[1]][[1]])
+glovers <- st_multipolygon(list(glovers)) %>% st_sfc(crs=4326)
 
 # lighthouse
 atoll2 <- st_polygon(atolls[[1]][[2]]) #outside
 atoll3 <- st_polygon(atolls[[1]][[3]]) #inside
 lighthouse <- st_difference(atoll2,atoll3)
+lighthouse <- st_multipolygon(list(lighthouse)) %>% st_sfc(crs=4326)
 
 # turneffe
 atoll5 <- st_polygon(atolls[[1]][[5]]) # outside
 atoll6 <- st_polygon(atolls[[1]][[6]]) # inside
 turneffe <- st_difference(atoll5,atoll6)
+turneffe <- st_multipolygon(list(turneffe)) %>% st_sfc(crs=4326)
+
+b_color='#5e3c99' #purple
+g_color='#e66101' #orange
+l_color='#1b7837' #green
+
+g_color= '#fc8d59' #orange (G)
+l_color='#ffffbf' #yellow (L)
+b_color='#91bfdb' #blue (B)
+
+ggplot(barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='black',fill='white',shape=21,size=3)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        panel.background = element_rect(fill = "#f0f0f0"))+
+  ylim(16.42,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.65,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.05),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)
+
+ggplot(sgs_points_sf,size=3, shape=21, aes(color=Region))+
+  geom_sf()+
+  scale_color_manual(values=c(b_color,b_color,b_color,g_color,l_color,b_color))+
+  geom_sf(data=barrier,color='black',fill='black')
+
+library(ggspatial)
+
+######## broad scale colors map (for talk)
+
+ggplot(data=barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,size=3, shape=21, aes(fill=Region))+
+  scale_fill_manual(values=c(b_color,b_color,b_color,g_color,l_color,b_color))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null")
+        )+
+  ylim(16.43,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.68,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.07),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)+
+  annotation_scale(location='br', width_hint=0.3)
+
+#### and with no colors
+ggplot(data=barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,size=3, shape=21, fill='white')+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null")
+        )+
+  ylim(16.43,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.68,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.07),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)+
+  annotation_scale(location='br', width_hint=0.3)
+```
+
+
+```{r,eval=FALSE}
+######## fine scale colors map (for talk)
+
+n_color= '#2b8cbe' #northern (N)
+c_color='#a6bddb' #central (C)
+t_color='#ece7f2' #turneffe (T)
+
+ggplot(data=barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+    geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=filter(sgs_points_sf,
+                      Region %in% c("barrier (northern)", "barrier (central)", "Turneffe Atoll")),
+          size=3,shape=21, aes(fill=Region))+
+  scale_fill_manual(values=c(n_color,c_color,t_color))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null")
+        )+
+  ylim(16.43,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.68,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.07),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)+
+  annotation_scale(location='br', width_hint=0.3)
+```
+
+
+```{r,eval=FALSE}
+######### IBD map (for talk)
+
+ggplot(data=barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=filter(sgs_points_sf,Region %in% c("barrier (northern)", "barrier (central)")),
+          size=3, shape=21, fill='black')+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0),"points"),
+        panel.margin = unit(c(0, 0, 0, 0), "null")
+        )+
+  ylim(16.43,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.68,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.07),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)+
+  annotation_scale(location='br', width_hint=0.3)
+
+```
+
+
+```{r,eval=FALSE}
+plot_map_colors <- ggplot(barrier)+
+  geom_sf(color=b_color,fill=b_color)+
+  geom_sf(data=turneffe,color=b_color,fill=b_color)+
+  geom_sf(data=glovers,color=g_color,fill=g_color)+
+  geom_sf(data=lighthouse,color=l_color,fill=l_color)+
+#  geom_sf(data=sgs_points_sf,color='black',aes(fill=Region))+
+#  scale_fill_manual(values=c(b_color,b_color,b_color,g_color,l_color))+
+  geom_sf(data=sgs_points_sf,color='black',fill=,shape=21,size=2)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        panel.background = element_rect(fill = "#f0f0f0"))+
+  ylim(16.42,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_label(aes(x=-87.82,y=17.75),label="Barrier/ \nTurneffe",fill=b_color,alpha=0.1)+
+  geom_label(aes(x=-87.8,y=16.65),label="Glover's",fill=g_color,alpha=0.1)+
+  geom_label(aes(x=-87.65,y=17.05),label="Lighthouse",fill=l_color,alpha=0.1)+
+  xlab(NULL)+ylab(NULL)
+
+plot_map_bw <- ggplot(barrier)+
+  geom_sf(color='black',fill='black')+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='black',fill='white',shape=21,size=2)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank(),
+        panel.background = element_rect(fill = "#f0f0f0"))+
+  ylim(16.42,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.65,y=18.1),label="Barrier")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's")+
+  geom_text(aes(x=-87.65,y=17.05),label="Lighthouse")+
+  xlab(NULL)+ylab(NULL)
+
 
 # put the atolls together
 all_atolls <- st_multipolygon(x=list(glovers,lighthouse,turneffe)) %>%

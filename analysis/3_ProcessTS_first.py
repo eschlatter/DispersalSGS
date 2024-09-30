@@ -1,13 +1,13 @@
 import msprime, tskit, pyslim, pandas, csv
 
-treefile = "../output/500k/ts_8349801080707846925_t500"
-#treefile = "../output/test_subsets/ts_8238198510834684392_t160000"
+#treefile = "../output/500k/ts_8349801080707846925_t500"
+treefile = "../output/638463423/ts_638463423_t500"
 ts = tskit.load("%s.trees" % (treefile))
 max_num_roots = max([t.num_roots for t in ts.trees()])
 print(f"Maximum number of roots: {max_num_roots}")
 
 # recapitate
-ts_r = pyslim.recapitate(ts, ancestral_Ne=440000, recombination_rate=1e-8)
+ts_r = pyslim.recapitate(ts, ancestral_Ne=43000, recombination_rate=1e-8)
 
 # add mutations
 ts_m = msprime.sim_mutations(

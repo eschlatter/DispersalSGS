@@ -1,16 +1,28 @@
 species all initialize(){
+
+	//------------------------------------
+	// data storage and recording
+	//------------------------------------
+	
 	//setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
 	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis");
 	defineConstant("simID", getSeed());
 	createDirectory(("../output/" + simID));
 	
+	//------------------------------------
 	// biological parameters
+	//------------------------------------
+	
 	defineConstant("N_sponge",50000); // population size (when habitat is saturated)
 	defineConstant("F_goby",50); // number of offspring per female
 	defineConstant("NMAX",0.2); // larval navigation distance
 	defineConstant("MATECHOICE_DIST",0.15); // mate choice radius = 10m in reality; multiply by 10 because I'm using 1/10 the actual population size
 	
 	initializeSLiMModelType("nonWF");
+	
+	//------------------------------------
+	// interactions
+	//------------------------------------	
 	
 	// larvae looking for sponges
 	initializeInteractionType(1,"xy",maxDistance=NMAX);
@@ -89,7 +101,7 @@ ticks all 1 early() {
 
 // log file. Wait until the simulation's going, so any global variables we need are defined, etc.
 ticks all 3 early(){	
-	log = community.createLogFile(("../output/" + simID + "/log_" + simID + ".txt"),logInterval=1000);
+	log = community.createLogFile(("../output/" + simID + "/log_" + simID + ".txt"),logInterval=10);
 	log.addCycle(goby);
 	log.addCustomColumn("popsize","popsize;");
 	//log.addCustomColumn("nomate","nomate;");
@@ -158,8 +170,8 @@ ticks all 2: late(){
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
 }
 
-//ticks all seq(from=20000,to=500000,by=20000) late() {
-ticks all seq(from=4,to=8,by=2) late() {
+ticks all seq(from=100,to=500,by=100) late() {
+//ticks all seq(from=4,to=8,by=2) late() {
 	defineGlobal("TS_PATH", "../output/" + simID + "/ts_" + simID + "_t" + community.tick + ".trees");
 	goby.treeSeqOutput(TS_PATH);	
 	defineGlobal("SO_PATH", "../output/" + simID + "/so_" + simID + "_t" + community.tick);

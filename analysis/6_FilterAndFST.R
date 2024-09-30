@@ -1,8 +1,10 @@
 #setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis")
 setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
-treefile = "../output/500k/ts_8349801080707846925_t500"
+#treefile = "../output/500k/ts_8349801080707846925_t500"
+treefile = "../output/638463423/ts_638463423_t500"
 library(tidyverse)
 library(vcfR)
+library(dartR)
 
 # read in locations of simulated individuals
 sample_inds <- read_csv(paste0(treefile,"_sample_inds.csv")) %>%
@@ -54,3 +56,4 @@ fst_sim <- filter(fst_sim, !is.na(value)) %>%
   rename(sim_fst = value)
 fst_sim <- arrange(fst_sim,sites)   
 save(fst_sim,file=paste0(treefile,"_FST.RData"))
+

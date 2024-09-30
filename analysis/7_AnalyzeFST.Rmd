@@ -11,8 +11,12 @@ library(tidyverse)
 
 setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
 #treefile = "../output/ts_8238198510834684392_t160000"
+treefile = "../output/638463423/ts_638463423_t500"
 fst_all_file = '../output/500k/FST_all.RData'
+
+fst_sim_new <- fst_sim
 ```
+
 
 ```{r}
 ########## Load empirical FSTs

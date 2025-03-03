@@ -43,7 +43,10 @@ simGL <- gl.filter.maf(simGL,threshold=0.02) # also removes monomorphic loci
 # Calculate pairwise fsts
 #############################################################################
 
+# get fst matrix
 fst_sim <- gl.fst.pop(simGL,nboots=1)  #dartR
+
+# make it into a long dataframe, with a row for each pair of sites
 fst_sim <- as.data.frame(fst_sim) %>%
   rownames_to_column(var = 'site1')
 fst_sim <- pivot_longer(fst_sim,cols = 2:ncol(fst_sim),
@@ -54,6 +57,8 @@ for (j in 1:nrow(fst_sim)) {
 }
 fst_sim <- filter(fst_sim, !is.na(value)) %>%
   rename(sim_fst = value)
-fst_sim <- arrange(fst_sim,sites)   
+fst_sim <- arrange(fst_sim,sites)
+
+# save it
 save(fst_sim,file=paste0(treefile,"_FST.RData"))
 

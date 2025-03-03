@@ -59,6 +59,41 @@ rm(mmpy_shp) #it's big
 
 save(bze,file='../data/mmp_bze.RData')
 ```
+```{r}
+library(marmap)
+load('../data/SGS_sites.RData')
+
+bathy_bze <- getNOAA.bathy(lon1 = -89, lon2 = -87, lat1 = 16, lat2 = 19, resolution = 0.25)
+bathy_xyz <- as.xyz(bathy_bze)
+
+shallows <- c("skyblue","skyblue1","skyblue2","skyblue3")
+meds <- c("yellow1","yellow2","yellow3")
+deeps <- c("dodgerblue","dodgerblue1","dodgerblue2","dodgerblue3")
+
+
+blues <- c("lightsteelblue1", "lightsteelblue2", "lightsteelblue3", "lightsteelblue4")
+
+plot(bathy_bze, ylim=c(16.5,18), image = TRUE, land = TRUE, lwd = 0.1, n=10,
+     bpal = list(c(0, max(bathy_bze), "grey"),
+                 c(0,min(bathy_bze),blues),
+                 c(-30,-70,meds)))
+plot(bathy_bze, deep = 0, shallow = 0, step = 0, lwd = 0.4, add = TRUE)
+points(sites_lonlat[,1],sites_lonlat[,2],pch=21,col="black",bg="red",cex=0.8)
+scaleBathy(bathy_bze, deg = 0.2, x = "bottomleft", inset = 5)
+
+
+# plot(bathy_bze, image = TRUE, land = TRUE, lwd = 0.1, n=10,
+# bpal = list(c(0, max(bathy_bze), "grey"),
+#             c(0,-45,shallows),
+#             c(-45,-90,meds),
+#             c(-90,min(bathy_bze),deeps)))
+# plot(bathy_bze, deep = 0, shallow = 0, step = 0,
+# lwd = 0.4, add = TRUE)
+# scaleBathy(bathy_bze, deg = 0.2, x = "bottomleft", inset = 5)
+
+#plot(bathy_bze, image = TRUE)
+#scaleBathy(bathy_bze, deg = 2, x = "bottomleft", inset = 5)
+```
 
 ### Determine geographic extent for simulation
 I'm using 16.4km (i.e., max goby dispersal distance) outside of the SGS sampling area in each direction. If we simulate in that area (and let individuals die if they leave it), we shouldn't have to worry too much about edge effects.
@@ -99,6 +134,7 @@ save(reef_sim,min_lon,max_lon,min_lat,max_lat,dist_x,dist_y,file='../data/mmp_cr
 
 ### TNC Caribbean dataset:
 https://hub.arcgis.com/datasets/TNC::coral-reefs-2017/explore
+(Note: site is retiring; data also available at https://map.unbiodiversitylab.org/earth?basemap=grayscale&coordinates=17.0655843,-87.7560641,9&layers=global-distribution-of-warm-water-coral-reefs_100)
 I'm going to use this dataset instead, at least for now, because the lagoon and interior atolls are cropped
 
 ```{r,eval=FALSE}
@@ -218,6 +254,47 @@ ggplot(data=barrier)+
   xlab(NULL)+ylab(NULL)+
   annotation_scale(location='br', width_hint=0.3)
 ```
+### Plot with bathymetry:
+
+```{r}
+library(marmap)
+load('../data/SGS_sites.RData')
+
+#bathy_bze <- getNOAA.bathy(lon1 = -90, lon2 = -86, lat1 = 15, lat2 = 20, resolution = 0.25)
+#bathy_xyz <- as.xyz(bathy_bze)
+
+g <- ggplot(barrier)+
+  geom_contour_filled(data=bathy_xyz,aes(x=V1,y=V2,z=V3),breaks=c(1000,-1,-10,-20,-30,-40,-50,-60,-5000),alpha=0.5)+
+  #scale_fill_manual(values = c("tan","#f7fbff","#deebf7","#c6dbef","#9ecae1","#6baed6","#4292c6","#2171b5","#084594"))+
+  #scale_fill_manual(values = c("gray28","#c6dbef","orange","orange2","#9ecae1","#6baed6","#4292c6","#2171b5","#084594"))+
+  scale_fill_manual(values = c("gray28","#c6dbef","#9ecae1","#6baed6","#4292c6","#2171b5","#08519c","#08306b"), 
+                    name = "Depth(m), \n from NOAA ETOPO 2022")+
+  #geom_contour_filled(data=bathy_xyz,aes(x=V1,y=V2,z=V3),breaks=c(-20,-40),color="red",fill="red")+
+  #geom_sf(color='black',fill='black')+
+  geom_sf(fill="black",aes(color="coral reef"))+
+  scale_color_manual(values=c("black"), name = "Coral Cover, \n from Millennium Mapping Project")+
+  geom_sf(data=turneffe,color='black',fill='black')+
+  geom_sf(data=glovers,color='black',fill='black')+
+  geom_sf(data=lighthouse,color='black',fill='black')+
+  geom_sf(data=sgs_points_sf,color='black',fill='white',shape=21,size=3)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  ylim(16.42,18.16) +
+  xlim(-88.2,-87.4)+
+  geom_text(aes(x=-87.65,y=18.1),label="Barrier", color="white")+
+  geom_text(aes(x=-87.7,y=17.7),label="Turneffe", color="white")+
+  geom_text(aes(x=-87.8,y=16.65),label="Glover's", color="white")+
+  geom_text(aes(x=-87.65,y=17.05),label="Lighthouse", color="white")+
+  xlab(NULL)+ylab(NULL)
+
+g
+```
+
+### Use marmap to calculate over-water distances among sites
+```{r}
+trans1 <- trans.mat(bathy_bze,min.depth=0)
+out1 <- lc.dist(trans1,sites_lonlat,res="path")
+```
+
 
 
 ```{r,eval=FALSE}

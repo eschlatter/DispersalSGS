@@ -13,8 +13,10 @@ setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
 #treefile = "../output/ts_8238198510834684392_t160000"
 ```
 
-Load empirical FST
+Data prep:
 ```{r}
+########## Load empirical FSTs
+
 fst_emp <- read.csv('../data/FST_empirical.csv',header=T)
 fst_emp_long <- pivot_longer(fst_emp,cols=2:ncol(fst_emp),names_to=c('site2'))
 fst_emp_long$sites <- NA
@@ -25,15 +27,15 @@ fst_emp_long <- filter(fst_emp_long,!is.na(value)) %>%
   rename(emp_fst=value)
 fst_emp <- fst_emp_long
 rm(fst_emp_long)
-```
 
-Load simulated FSTs
-```{r}
-files <- list.files(path='../output/FSTs_240k') %>% strsplit(" ")
+
+########## Load simulated FSTs
+
+files <- list.files(path='../output/500k/FSTs') %>% strsplit(" ")
 fst_sims <- list()
 for (i in 1:length(files)) {
-   load(paste0('../output/FSTs_240k/',files[[i]])) # load fst matrix
-  
+   load(paste0('../output/500k/FSTs/',files[[i]])) # load fst matrix
+
    fst_sim <- as.data.frame(fsts) %>%
      rownames_to_column(var='site1')
    fst_sim <- pivot_longer(fst_sim,cols=2:ncol(fst_sim),names_to=c('site2'))
@@ -49,10 +51,9 @@ for (i in 1:length(files)) {
    assign(paste0('fst_sim_',i), fst_sim) # save as "fst_sim_i"
    fst_sims[[i]] <- fst_sim
 }
-```
 
-Combine simulated and empirical
-```{r}
+########## Combine simulated and empirical
+
 # combine simulation runs into a long table, with a column for the simulation number
 all_fst_sim <- data.frame(site1=factor(), site2=factor(), sim_fst=numeric(), sites=factor(), sim=factor())
 for(i in 1:length(fst_sims)){
@@ -65,7 +66,8 @@ all_fst_both <- full_join(all_fst_sim,fst_emp,by='sites') %>%
   select(sites,site1,site2=site2.x,sim,sim_fst,emp_fst) %>%
   filter(!is.na(emp_fst))
 
-# group by site pair (across simulations)
+########## Group by site pair (across simulations)
+
 all_fst_group <- group_by(all_fst_both,sites) %>%
   summarize(emp_fst=first(emp_fst),site1=first(site1),site2=first(site2),
             sim_med=median(sim_fst),sim_sd=sd(sim_fst),sim_min=min(sim_fst),sim_max=max(sim_fst))
@@ -85,18 +87,345 @@ all_fst_group <- mutate(all_fst_group,first_pop=substr(sites,1,1)) %>%
   mutate(second_pop=substr(sub('.*\\.','',sites),1,1)) %>%
   mutate(both_pops=paste0(first_pop,second_pop))
 
-save(all_fst_group,file='../output/FST_all_240k.RData')
+#save(all_fst_group,file='../output/FST_all_300k.RData')
 ```
 
+Get pairwise distance between sites
+```{r}
+load('../output/FST_all_300k.RData')
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+
+sitepair_dists <- dplyr::select(all_fst_group,sites,site1,site2)
+sitepair_dists <- left_join(sitepair_dists,sample_sites,by=c('site1' ='Site'),keep=FALSE) %>%
+  select(sites,site1,site2,site1.x=x,site1.y=y) %>%
+  left_join(sample_sites,by=c('site2' ='Site'),keep=FALSE) %>%
+  select(sites,site1,site2,site1.x,site1.y,site2.x=x,site2.y=y) %>%
+  mutate(dist=sqrt((site1.x-site2.x)^2+(site1.y-site2.y)^2))
+
+save(sitepair_dists, file='../data/sitepair_dists.RData')
+
+```
+
+
+```{r}
+library(ggpattern)
+load('../output/FST_all_300k.RData')
+
+all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
+all_fst_group$both_pops_bt <- factor(all_fst_group$both_pops_bt,levels=c('BB','GG','LL','BG','BL','GL'))
+
+#'#fc8d59' -orange (G)
+#'#ffffbf' -yellow (L)
+#'#91bfdb' -blue (B)
+
+ggplot(data=all_fst_group,aes(x=sim_med,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.05,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+    theme(legend.position='bottom')+
+  xlab('Simulated FST')+
+  guides(pattern_density = guide_legend(nrow = 3))
+
+ggplot(data=all_fst_group,aes(x=sim_med,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.03,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+
+ggplot(data=all_fst_group,aes(x=emp_fst,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+  geom_density_pattern(pattern_spacing=0.03,alpha=0.6,pattern_alpha=0.6)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+  scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+  scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+```
+
+```{r}
+library(ggpattern)
+library(gridExtra)
+load('../output/FST_all_300k.RData')
+
+all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
+all_fst_group$both_pops_bt <- factor(all_fst_group$both_pops_bt,levels=c('BB','GG','LL','BG','BL','GL'))
+
+bb <- ggplot(data=filter(all_fst_group,both_pops=="BB"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#91bfdb',pattern_fill='#91bfdb')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+gg <- ggplot(data=filter(all_fst_group,both_pops=="GG"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#fc8d59',pattern_fill='#fc8d59')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+ll <- ggplot(data=filter(all_fst_group,both_pops=="LL"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#ffffbf',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+bg <- ggplot(data=filter(all_fst_group,both_pops=="BG"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#91bfdb',pattern_fill='#fc8d59')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+bl <- ggplot(data=filter(all_fst_group,both_pops=="BL"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#91bfdb',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+gl <- ggplot(data=filter(all_fst_group,both_pops=="GL"),aes(x=sim_med))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#fc8d59',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank())+
+  xlim(0,0.25)+
+  xlab(NULL)+
+  ylab(NULL)
+
+g <- grid.arrange(bb,gg,ll,bg,bl,gl,ncol=1,
+             left='Population pair',bottom='Simulated FST')
+```
+```{r}
+library(ggpattern)
+library(gridExtra)
+load('../output/FST_all_300k.RData')
+
+all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
+all_fst_group$both_pops_bt <- factor(all_fst_group$both_pops_bt,levels=c('BB','GG','LL','BG','BL','GL'))
+
+bb <- ggplot(data=filter(all_fst_group,both_pops=="BB"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#91bfdb',pattern_fill='#91bfdb')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+gg <- ggplot(data=filter(all_fst_group,both_pops=="GG"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#fc8d59',pattern_fill='#fc8d59')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+ll <- ggplot(data=filter(all_fst_group,both_pops=="LL"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.02,pattern_density=0,fill='#ffffbf',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+bg <- ggplot(data=filter(all_fst_group,both_pops=="BG"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#91bfdb',pattern_fill='#fc8d59')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+bl <- ggplot(data=filter(all_fst_group,both_pops=="BL"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#91bfdb',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text=element_blank(),axis.ticks=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+gl <- ggplot(data=filter(all_fst_group,both_pops=="GL"),aes(x=emp_fst))+
+  geom_density_pattern(pattern_spacing=0.2,pattern_density=0.5,fill='#fc8d59',pattern_fill='#ffffbf')+
+  theme_bw()+
+  theme(panel.border = element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank())+
+  xlim(0,0.03)+
+  xlab(NULL)+
+  ylab(NULL)
+
+g <- grid.arrange(bb,gg,ll,bg,bl,gl,ncol=1,
+             left='Population pair',bottom='Empirical FST')
+```
+
+
+Again, but let's do subsets
+```{r}
+load('../output/FST_all_300k.RData')
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+
+fsts <- dplyr::select(all_fst_group,sites,site1,site2,emp_fst,sim_med) %>%
+#  filter(!(site1 %in%c('B1','B2','B3'))&!(site2 %in%c('B1','B2','B3'))) %>%
+  left_join(sample_sites,by=c('site1'='Site')) %>%
+  dplyr::select(sites,site1,site2,emp_fst,sim_med,region1=Region) %>%
+  left_join(sample_sites,by=c('site2'='Site')) %>%
+  dplyr::select(sites,site1,site2,emp_fst,sim_med,region1,region2=Region) %>%
+  mutate(region1=case_match(region1,
+                            'barrier (northern)'~'N','barrier (central)'~'C',
+                            'Turneffe Atoll'~'T',"Glover's Atoll" ~ 'G','Lighthouse Atoll'~'L',
+                            .default='G')) %>%
+  mutate(region2=case_match(region2,
+                            'barrier (northern)'~'N','barrier (central)'~'C',
+                            'Turneffe Atoll'~'T',"Glover's Atoll" ~ 'G','Lighthouse Atoll'~'L',
+                            .default='G'))
+
+fsts_subset <- filter(fsts,(region1 %in% c('N','C','T'))&(region2 %in% c('N','C','T')))
+
+fsts_subset$regions <- NA
+for(j in 1:nrow(fsts_subset)){
+  fsts_subset$regions[j] <- paste(sort(as.matrix(fsts_subset[j,c('region1','region2')])),collapse='')
+  }
+
+fsts_subset$regions <- factor(fsts_subset$regions,levels=c('NN','CC','TT','CN','NT','CT'))
+
+#'#2b8cbe' -northern (N)
+#'#a6bddb' -central (C)
+#'#ece7f2' -turneffe (T)
+
+ggplot(data=fsts_subset,aes(x=sim_med,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(pattern_spacing=0.05,alpha=0.5,pattern_alpha=0.5)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  xlab('Simulated FST')+
+    theme_bw()+
+    theme(legend.position='bottom')+
+  xlab('Simulated FST')+
+  guides(pattern_density = guide_legend(nrow = 3))
+
+ggplot(data=fsts_subset,aes(x=sim_med,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(pattern_spacing=0.02,alpha=0.5,pattern_alpha=0.5)+
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+
+ggplot(data=fsts_subset,aes(x=emp_fst,fill=regions,pattern_fill=regions,pattern_density=regions))+
+  geom_density_pattern(bw=0.0005,pattern_spacing=0.02,alpha=0.6,pattern_alpha=0.6)+ # try bw=0.0005 to remove lumpiness
+  scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Regions')+
+  scale_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#2b8cbe','#2b8cbe','#a6bddb'),name='Regions')+
+  scale_pattern_fill_manual(values=c('#2b8cbe','#a6bddb','#ece7f2','#a6bddb','#ece7f2','#ece7f2'),name='Regions')+
+  theme_bw()+
+  ylim(0,1000)+
+  theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+
+```
+
+
+
+Check IBD
+```{r}
+load('../output/FST_all_300k.RData')
+load('../data/sitepair_dists.RData')
+
+all_fst_group <- left_join(all_fst_group,sitepair_dists,keep=FALSE) %>%
+  filter(both_pops=='BB')
+
+all_fst_group <- mutate(all_fst_group,
+                        emp_scale=emp_fst/(1-emp_fst),
+                        sim_scale=sim_med/(1-sim_med))
+
+ggplot(all_fst_group,aes(x=dist,y=sim_scale))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+
+ggplot(all_fst_group,aes(x=dist,y=sim_med))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+
+ggplot(all_fst_group,aes(x=dist,y=emp_scale))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Simulated',x=NULL,y=NULL)
+#  geom_smooth(method='lm',se=FALSE)+
+
+ggplot(all_fst_group,aes(x=dist,y=emp_fst))+
+  geom_point(size=1.1)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(title='Empirical',x=NULL,y=NULL)
+```
+
+Check IBD
+```{r}
+load('../output/FST_all_300k.RData')
+load('../data/sitepair_dists.RData')
+
+all_fst_group <- left_join(all_fst_group,sitepair_dists,keep=FALSE)
+
+ggplot(all_fst_group,aes(x=dist,y=sim_med,color=(B1|B2|B3)))+
+  facet_wrap(~both_pops,nrow=2)+
+  geom_point(size=1.1)+
+  theme_bw()+
+  xlab('Distance (km)')+
+  ylab('Simulated FST (median of 10 sims)')+
+#  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('Simulated IBD by population pair')
+
+ggplot(all_fst_group,aes(x=dist,y=emp_fst,color=(B1|B2|B3)))+
+  facet_wrap(~both_pops,nrow=2)+
+  geom_point(size=1.1)+
+  theme_bw()+
+  xlab('Distance (km)')+
+  ylab('Empirical FST')+
+#  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('Empirical IBD by population pair')
+```
 
 ```{r}
 load('../output/FST_all_300k.RData')
 
 ggplot(all_fst_group,aes(x=emp_fst,y=sim_med))+
   geom_point()+
+  theme_bw()+
   xlab('Empirical FST')+
-  ylab('Simulated FST (median of 10 sims)')
+  ylab('Simulated FST (median of 10 sims)')+
+  ggtitle('4 chromosomes, 10k generations')
 ```
+
 
 
 ```{r}
@@ -105,8 +434,80 @@ ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,color=both_pops))+
   xlab('Empirical FST')+
   ylab('Simulated FST (median of 10 sims)')+
   geom_smooth(method='lm',se=FALSE)+
+  ggtitle('10k generations, 4 chromosomes')
+```
+
+```{r}
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  theme_bw()+
+  xlab('Empirical FST')+
+  ylab('Simulated FST (median of 10 sims)')+
+  geom_smooth(method='lm',se=FALSE)+
   ggtitle('300k generations')
 ```
+
+
+```{r}
+library(cowplot)
+
+load('../output/FST_all_20k.RData')
+all_fst_group_20k <- all_fst_group
+rm(all_fst_group)
+load('../output/FST_all_120k.RData')
+all_fst_group_120k <- all_fst_group
+rm(all_fst_group)
+load('../output/FST_all_180k.RData')
+all_fst_group_180k <- all_fst_group
+rm(all_fst_group)
+load('../output/FST_all_300k.RData')
+all_fst_group_300k <- all_fst_group
+rm(all_fst_group)
+
+g1 <- ggplot(all_fst_group_20k,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  theme_bw()+
+  xlab('Empirical FST')+
+  ylab('Simulated FST (median of 10 sims)')+
+  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('20k generations')+
+  theme(legend.position = "none")+
+  ylim(-0.01,0.25)
+
+g2 <- ggplot(all_fst_group_120k,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  theme_bw()+
+  xlab('Empirical FST')+
+  ylab(NULL)+
+  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('120k generations')+
+  theme(legend.position = "none")+
+  ylim(-0.01,0.25)
+
+g3 <- ggplot(all_fst_group_180k,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  theme_bw()+
+  xlab('Empirical FST')+
+  ylab(NULL)+
+  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('180k generations')+
+  theme(legend.position = "none")+
+  ylim(-0.01,0.25)
+
+g4 <- ggplot(all_fst_group_300k,aes(x=emp_fst,y=sim_med,color=both_pops))+
+  geom_point()+
+  theme_bw()+
+  xlab('Empirical FST')+
+  ylab(NULL)+
+  geom_smooth(method='lm',se=FALSE)+
+  ggtitle('300k generations')+
+  theme(legend.position = "none")+
+  ylim(-0.01,0.25)
+
+grid.arrange(g1,g2,g3,g4,nrow=1)
+
+```
+
 
 ```{r}
 ggplot(filter(all_fst_group,both_pops %in% c('TT','GG','LL')),aes(x=emp_fst,y=sim_med,color=both_pops))+
@@ -131,8 +532,15 @@ It's B1, B2, and B3 with Lighthouse.
 ```{r}
 filter(BL,sim_med>0.175)
 
-ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,color=(L & (B1 | B2 | B3 | B5))))+
-  geom_point()
+## highlight the points from one site
+ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
+  theme_bw()+
+  geom_point(size=1.1)+
+  geom_smooth(method='lm',se=FALSE)+
+  geom_point(data=filter(all_fst_group,
+                         (B1 | B2 | B3)),
+             aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
+  ggtitle('B1,B2,B3')
 ```
 
 ```{r}
@@ -143,49 +551,13 @@ ggplot(all_fst_group,aes(x=emp_fst,y=sim_med))+
 ```
 
 
-
-```{r}
-## highlight the points from one site
-ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
-  geom_point(size=1.1)+
-  geom_smooth(method='lm',se=FALSE)+
-  geom_point(data=filter(all_fst_group,T6==TRUE),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
-  ggtitle('T6')
-```
-```{r}
-## highlight the points from one site
-ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
-  geom_point(size=1.1)+
-  geom_smooth(method='lm',se=FALSE)+
-  geom_point(data=filter(all_fst_group,(B1==TRUE | B2==TRUE | B3==TRUE)),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
-  ggtitle('B1,B2,B3')
-```
-
-
-```{r}
-hilite_site="B20"
-ggplot(all_fst_group,aes(x=emp_fst,y=sim_med,fill=both_pops,color=both_pops),shape=21)+
-  geom_point(size=1.1)+
-  geom_smooth(method='lm',se=FALSE)+
-  geom_point(data=filter(all_fst_group,B20==TRUE),aes(x=emp_fst,y=sim_med,fill=both_pops),color='black',shape=21)+
-  ggtitle(hilite_site)
-```
-
-
-```{r}
-bigs <- filter(all_fst_group,sim_med>0.2) %>% select(sites,emp_fst,sim_med,sim_sd)
-ggplot(bigs,aes(x=emp_fst,y=sim_med))+
-  geom_point()+
-  geom_errorbar(aes(ymin=sim_med-sim_sd,ymax=sim_med+sim_sd))+
-  geom_point(data=all_fst_group,aes(x=emp_fst,y=sim_med))
-```
-
-
 ## Check that, at the end of the simulation, there's still a reasonable spatial distribution of individuals
 
 ```{r}
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+
 ## Read in and process the "individuals" .csv from tskit (but don't subset it to get just the sampled ones)
-inds <- read_csv(file='../output/ts_8238198510834684392_t240000.csv',col_names=F,show_col_types=FALSE)
+inds <- read_csv(file='../output/sample_inds/ts_8238198510834684392_t300000.csv',col_names=F,show_col_types=FALSE)
 inds <- as.data.frame(t(inds))
 inds <- separate_wider_delim(inds,cols=V1,delim=',',names=c('flags','x','y','zero','parents','array','dtype','pedID','pedp1','pedp2','age','subpop','sex','flags2')) %>%
   dplyr::select(x,y,pedID,pedp1,pedp2,age,sex)
@@ -198,6 +570,9 @@ inds <- mutate(inds,id=0:(nrow(inds)-1),x=as.numeric(x),y=as.numeric(y),age=as.n
 load('../data/mmp_crop.RData') # use this to convert x and y into lat and lon
 inds <- mutate(inds,lon = min_lon+x*(max_lon-min_lon)/dist_x, lat = min_lat+y*(max_lat-min_lat)/dist_y)
 
+site_coords <- sample_sites[,c('Site','x','y')]
+site_coords <- mutate(site_coords,lon = min_lon+x*(max_lon-min_lon)/dist_x, lat = min_lat+y*(max_lat-min_lat)/dist_y)
+
 ## Plot all individuals (in yellow) on top of the reference map
 load('../data/TNC_sim.RData')
 load('../data/SGS_sites.RData')
@@ -205,67 +580,16 @@ ggplot(barrier)+
   geom_sf(color='black',fill='black')+
   geom_sf(data=all_atolls,color='black',fill='black')+
   geom_sf(data=sgs_points_sf,color='blue')+
-  coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
-  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=2)+
+  coord_sf(xlim=c(site_coords[site_coords$Site=='B3',]$lon-0.12,site_coords[site_coords$Site=='B3',]$lon+0.15),
+           ylim=c(site_coords[site_coords$Site=='B3',]$lat-0.3,max_lat),expand=FALSE)+
+  #coord_sf(xlim=c(min_lon,max_lon),ylim=c(min_lat,max_lat),expand=FALSE)+
+  geom_sf_label(data=sgs_points_sf,aes(label=Site),color='blue',hjust=0, vjust=0,size=6)+
   theme(panel.background = element_rect(fill = "lightblue"),
         panel.grid.major = element_blank(),
         panel.border=element_blank(),
         plot.margin = unit(c(0, 0, 0, 0),"points"),
         panel.margin = unit(c(0, 0, 0, 0), "null"))+
-  geom_point(data=inds,aes(x=lon,y=lat),color='yellow', size=0.01)
+  geom_point(data=inds,aes(x=lon,y=lat),color='yellow', size=0.005)
+
 # save it as a really big png: e.g., 7070x6940, and zoom in, and you can see individuals distributed throughout the reef area.
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Scratch
-Load a single empirical FST
-```{r,eval=FALSE}
-load(file=paste0(treefile,"_FST.RData"))
-#load(file="../output/ts_4399080398350530317_t160000_FST.RData")
-fst_sim <- as.data.frame(fsts) %>%
-  rownames_to_column(var='site1')
-rm(fsts)
-
-fst_sim_long <- pivot_longer(fst_sim,cols=2:ncol(fst_sim),names_to=c('site2'))
-fst_sim_long$sites <- NA
-for(i in 1:nrow(fst_sim_long)){
-  fst_sim_long$sites[i] <- paste(sort(as.matrix(fst_sim_long[i,1:2])),collapse='.')
-}
-fst_sim_long <- filter(fst_sim_long,!is.na(value)) %>%
-  rename(sim_fst=value)
-```
-
-```{r}
-all_fst_sim <- data.frame(sites=fst_sim_1$sites)
-# add each fst dataset as a column
-for(i in 1:length(fst_sims)){
-  all_fst_sim <- full_join(all_fst_sim,fst_sims[[i]]) %>% select(-c(site1,site2))  
-}
-
-# calculate mean, median, sd of all the fst columns for each row (mutate)
-just_data <- select(all_fst_sim,contains('sim_fst_'))
-all_fst_sim$median <- apply(just_data,1,median)
-all_fst_sim$sd <- apply(just_data,1,sd)
-```
-
-```{r}
-fst_all <- full_join(fst_emp_long,fst_sim_long,by='sites') %>%
-  select(sites,emp_fst,sim_fst) %>%
-  filter(!is.na(emp_fst))
-
-ggplot(data=fst_all,aes(x=emp_fst,y=sim_fst))+
-  geom_point()+
-  xlab('Empirical FST')+
-  ylab('Simulated FST')
 ```

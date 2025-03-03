@@ -1,0 +1,129 @@
+---
+title: "Untitled"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+#setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis")
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
+#treefile <- commandArgs(TRUE)[1]
+treefile = "C:/Users/eschlatter/Dropbox/DispersalSGS/output/checkdir/1_1641294773/ts_1641294773_t3"
+treefile
+
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+
+library(vcfR)
+library(dartR)
+library(snpStats)
+```
+
+```{r}
+#############################################################################
+# read in Individuals data from tskit
+#############################################################################
+inds <- read_csv(paste0(treefile,".csv"),col_names=F,show_col_types=FALSE)
+inds <- as.data.frame(t(inds))
+inds <- separate_wider_delim(inds,cols=V1,delim=',',names=c('flags','x','y','zero','parents','array','dtype','pedID','pedp1','pedp2','age','subpop','sex','flags2')) %>%
+  dplyr::select(x,y,pedID,pedp1,pedp2,age,sex)
+
+inds <- mutate(inds,x = as.numeric(gsub("[^0-9.]","",x))) %>%
+  mutate(y = as.numeric(gsub("[^0-9.]","",y))) %>%
+  mutate(pedID = as.factor(gsub("[^0-9.]","",pedID))) %>%
+  mutate(pedp1 = str_sub(gsub("\\D","",pedp1),start=2)) %>%
+  mutate(pedp2 = str_sub(gsub("\\D","",pedp2),start=2)) %>%
+  mutate(age = as.numeric(gsub("\\D","",age))) %>%
+  mutate(sex = as.numeric(gsub("\\D","",sex))) %>%
+  mutate(id=0:(nrow(inds)-1))
+```
+
+```{r}
+#############################################################################
+# read in Sites data from tskit
+#############################################################################
+
+sites <- read_csv(paste0(treefile,"_sites.csv"),col_names=F)
+sites <- as.data.frame(t(sites))
+colnames(sites) = c('pedID','site_member')
+sites <- mutate(sites,pedID=as.factor(pedID))
+```
+
+```{r}
+#############################################################################
+# read in VCF file from tskit
+#############################################################################
+
+simVCF <- read.vcfR(paste0(treefile,".vcf"),verbose=FALSE)
+```
+
+
+```{r}
+#############################################################################
+# Let's make a map and check that these individuals are where they should be
+#############################################################################
+
+inds <- left_join(inds,sites,by='pedID')
+inds <- mutate(inds,site_member=as.factor(site_member))
+ggplot(data=inds,aes(x=x,y=y,color=site_member))+
+  geom_point()
+
+summarize(group_by(inds,site_member),samps = n())
+```
+
+Check: look at distances from each individual to its site point
+```{r}
+sample_sites <- read_csv('../data/sgs_sites_SLiM.csv',show_col_types=FALSE)
+sample_sites$site_member <- as.factor(1:nrow(sample_sites))
+
+inds_plus_sites <- left_join(inds,sample_sites,by='site_member') %>%
+  mutate(dist_km = sqrt((x.x-x.y)^2+(y.x-y.y)^2)) %>%
+  group_by(site_member) %>%
+  summarize(maxdist = max(dist_km))
+```
+
+```{r}
+#############################################################################
+# connect genetic info to site info
+#############################################################################
+
+# make a column in inds so that ids exactly match the vcf
+inds <- mutate(inds,gt_name=paste0("tsk_",id))
+# create a factor of the sampling site of each individual in vcf
+ind_sites <- as.factor(arrange(inds,id)$site_member)
+
+#############################################################################
+# Convert to genind, add population info, convert to genlight
+#############################################################################
+
+simGI <- vcfR2genind(simVCF)
+simGI@pop <- ind_sites
+simGL <- gi2gl(simGI,verbose=0)
+
+```
+```{r}
+#############################################################################
+# Filter: LD and rare alleles
+#############################################################################
+
+# LD:
+simGL@pop <- as.factor(rep('pop1',length(simGL@ind.names))) #remove site info temporarily
+ld_report <- gl.report.ld.map(simGL,maf=0.02)
+simGL <- gl.filter.ld(simGL,ld_report, threshold=0.8) # R^2>0.8 is what was used in the paper
+simGL@pop <- ind_sites #restore site info
+
+# rare alleles
+simGL <- gl.filter.maf(simGL,threshold=0.02) # also removes monomorphic loci
+
+#############################################################################
+# Calculate pairwise fsts
+#############################################################################
+
+fsts <- gl.fst.pop(simGL,nboots=1)
+save(fsts,file=paste0(treefile,"_FST.RData"))
+```
+
+

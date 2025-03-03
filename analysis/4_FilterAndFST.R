@@ -24,7 +24,7 @@ inds <- mutate(inds,x=str_trim(str_sub(x,start=18)),pedID=str_trim(str_sub(pedID
 inds <- mutate(inds,id=0:(nrow(inds)-1),x=as.numeric(x),y=as.numeric(y),age=as.numeric(age))
 
 #############################################################################
-# read in sample sites data
+# read in sample sites data, and choose the individuals to sample
 #############################################################################
 sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
 

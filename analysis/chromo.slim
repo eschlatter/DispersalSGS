@@ -1,0 +1,201 @@
+species all initialize(){
+	setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
+//	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis");
+
+	defineConstant("simID", getSeed());
+	defineCfgParam("taskID", 1);
+	defineConstant("runname", "runs_chromo");
+	
+	createDirectory(("../output/" + runname + "/" + asInteger(taskID) + '_' + simID));
+ defineConstant("DIREC",("../output/" + runname + "/" + asInteger(taskID) + '_' + simID));
+
+	// tree sequence recording interval
+	defineCfgParam("simplInt",5);
+
+	// biological parameters
+	defineCfgParam("N_sponge",50000); // population size (when habitat is saturated)
+	defineCfgParam("F_goby",60); // number of offspring per female
+	defineCfgParam("NMAX",0.2); // larval navigation distance
+	defineCfgParam("MATECHOICE_DIST",0.15); // mate choice radius = 10m in reality; greater to ensure pop persistence
+	
+	initializeSLiMModelType("nonWF");
+	
+	// larvae looking for sponges
+	initializeInteractionType(1,"xy",maxDistance=NMAX);
+	i1.setInteractionFunction("l",1.0);
+	
+	// females looking for mates
+	initializeInteractionType(2,"xy",maxDistance=MATECHOICE_DIST,sexSegregation='FM');
+	i2.setInteractionFunction("l",1.0);
+	
+	//sponges checking for settlers
+	initializeInteractionType(3,"xy",maxDistance=0);
+}
+
+species sponge initialize() {
+	initializeSpecies(avatar = 'S', color='orange');
+	initializeSLiMOptions(dimensionality="xy");
+}
+
+species goby initialize() {
+	initializeSpecies(avatar='G',color='blue');
+	initializeSLiMOptions(dimensionality="xy");
+	initializeTreeSeq(simplificationInterval=asInteger(simplInt)); // simplify the tree sequence every ## ticks
+	
+	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
+	m1.convertToSubstitution = T;
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, 399999); // try four chromosomes, each 100k bp
+	//initializeMutationRate(1e-7); // per base position per gamete. Lit value is 0.5e-8 per site per GENERATION (not gamete), so divide that by 2x the pop size used to generate the estimate? I'll check the paper again...
+	initializeMutationRate(0);
+	rates = c(1.5e-8,0.5,1.5e-8,0.5,1.5e-8,0.5,1.5e-8);
+	ends = c(99999,100000,199999,200000,299999,300000,399999);
+	initializeRecombinationRate(rates,ends); // per base position per gamete, 1cM/Mbp=1e-8 in SLiM's units. Lit says 1.5cM/Mbp, so set to 1.5e-8.
+	initializeSex("A"); // I don't think we need X/Y chromosome level of detail
+}
+
+// set up populations and map
+ticks all 1 early() {
+	sponge.addSubpop("p1", asInteger(N_sponge)); //sponges
+	goby.addSubpop("p2",asInteger(round(0.9*N_sponge)));
+	
+	// map png file generated from Rmd file
+	mapImage = Image("../data/map_SLiM.png");
+	p1.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
+	map = p1.defineSpatialMap("bbr", "xy", mapImage.floatB,
+		valueRange=c(0.0, 1.0), colors=c("black", "white"));
+	defineConstant("BBR", map);
+	
+	p2.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
+	map = p2.defineSpatialMap("bbr", "xy", mapImage.floatR,
+		valueRange=c(0.0, 1.0), colors=c("black", "white"));
+	
+	
+	// set spatial positions of sponges (anywhere on reef)
+	// code credit: https://github.com/MesserLab/SLiM-Extras
+	leftToDraw = p1.individuals;
+	
+	while (size(leftToDraw) > 0)
+	{
+		positions = p1.pointUniform(size(leftToDraw));
+		onReef = p1.spatialMapValue("bbr", positions) == 0.0;
+		onReefCount = sum(onReef);
+		
+		if (onReefCount > 0)
+		{
+			onReefPositions = positions[repEach(onReef, 2)];
+			leftToDraw[seqLen(onReefCount)].setSpatialPosition(onReefPositions);
+			leftToDraw = leftToDraw[seqLen(size(leftToDraw) - onReefCount) + onReefCount];
+		}
+	}
+	
+	// place gobies in sponge positions
+	positions = p1.sampleIndividuals(size(p2.individuals)).spatialPosition;
+	p2.individuals.setSpatialPosition(positions);
+	
+	defineConstant("start",clock());
+	catn("simID="+simID+"\ntaskID="+taskID+"\nrunname="+runname+"\nsimplInt="+simplInt+"\n");
+	catn("N_sponge="+N_sponge+"\nF_goby="+F_goby+"\nNMAX="+NMAX+"\nMATECHOICE_DIST="+MATECHOICE_DIST+"\n");
+	catn('tick time popsize nomate foundsponge');
+	
+}
+
+// save sponge population for SLiM use later
+ticks all 3 early(){	
+	defineGlobal("SO_PATH", DIREC + "/so_" + simID + "_sponge");
+	sponge.outputFull(filePath = SO_PATH);
+	
+	log = community.createLogFile((DIREC + "/log_" + simID + ".txt"),logInterval=1);
+	log.addCycle(goby);
+	log.addCustomColumn("time","clock()-start;");
+	log.addCustomColumn("popsize","popsize;");
+	log.addCustomColumn("nomate","nomate;");
+	log.addCustomColumn("foundsponge","foundsponge;");
+	}
+
+ticks goby 2: first(){
+	i2.evaluate(p2);
+	defineGlobal('popsize',size(p2.individuals)); 	//  OUTPUT: total successful recruits
+//	cat(community.tick);	
+//	cat(' ' + size(p2.individuals));
+}
+
+// reproduction
+species goby reproduction(NULL,'F'){
+	mate = i2.drawByStrength(receiver = individual,count = 1); // search for a mate within range
+	if (size(mate)){  //produce offspring
+		clutchSize = rpois(1,asInteger(F_goby));
+		subpop.addCrossed(individual,mate,count=clutchSize);
+		individual.tagL0 = F; // OUTPUT: track how many found mates
+	}
+	else individual.tagL0 = T; // OUTPUT: track how many found mates
+}
+
+//displacement
+ticks goby 2: early() {
+	moms = p2.subsetIndividuals(sex="F",minAge=1);
+	defineGlobal("nomate", sum(moms.tagL0)/size(moms));  // OUTPUT: track how many didn't find mates
+//	cat(' ' + sum(moms.tagL0)/size(moms));
+	larvae = p2.subsetIndividuals(maxAge=0);
+	p2.deviatePositions(larvae,"stopping",INF,"e",0.36);
+}
+
+//find a sponge
+ticks all 2: early(){
+	i1.evaluate(c(p2,p1));
+	p2.individuals.tag=1; //survives, unless later specified
+	larvae = p2.subsetIndividuals(maxAge=0);
+	for (larva in larvae){
+		settle_site = i1.drawByStrength(receiver = larva,count = 1,exerterSubpop = p1); // search for a sponge within range
+		if(size(settle_site)){  // if a sponge was found
+			larva.setSpatialPosition(settle_site.spatialPosition); //settle there
+			larva.tag=1;
+		}
+		else larva.tag=0; // larva dies
+	}
+//	catn(' ' + size(larvae[which(larvae.tag==1)])/size(larvae));
+	defineGlobal('foundsponge',size(larvae[which(larvae.tag==1)])/size(larvae)); // OUTPUT: track how many found a sponge
+	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who didn't find a sponge
+}
+
+// nonoverlapping generations
+species goby survival() {
+	return(individual.age == 0);
+}
+
+//competition
+ticks all 2: late(){
+	i3.evaluate(c(p1,p2));
+	p2.individuals.tag=1; // survives, unless later specified
+	for(spot in p1.individuals){
+		settlers = i3.nearestInteractingNeighbors(spot,count=size(p2.individuals),exerterSubpop=p2);
+		n_sett = size(settlers);
+		if(n_sett>1){ //if there's competition
+			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0;
+		}
+	}
+	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
+}
+
+ticks all seq(from=2,to=5,by=2) late() {
+//ticks all c(4,5) late() {
+	defineGlobal("TS_PATH", DIREC + "/ts_" + simID + "_t" + community.tick + ".trees");
+	goby.treeSeqOutput(TS_PATH);	
+	defineGlobal("SO_PATH", DIREC + "/so_" + simID + "_t" + community.tick);
+	goby.outputFull(filePath = SO_PATH);
+	catn(community.tick + ' ' + (clock()-start) + ' ' + popsize + ' ' + nomate + ' ' + foundsponge);
+}
+
+//// A HELPER FUNCTION FOR SETTING CONSTANTS THAT MIGHT BE CONFIGURED VIA COMMAND LINE.
+//  Created by Sam Champer, 2020.
+//  A product of the Messer Lab, http://messerlab.org/slim/
+
+//  Sam Champer, Ben Haller and Philipp Messer, the authors of this code, hereby
+//  place the code in this file into the public domain without restriction.
+//  If you use this code, please credit SLiM-Extras and provide a link to
+//  the SLiM-Extras repository at https://github.com/MesserLab/SLiM-Extras.
+//  Thank you.
+function (void) defineCfgParam(string$ name, lifs value) {
+    if (!exists(name))
+        defineConstant(name, value);
+}

@@ -3,29 +3,39 @@ species all initialize(){
 	//------------------------------------
 	// data storage and recording
 	//------------------------------------
-//	setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
-	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis");
+	//	setwd("/projectnb/dispevol/E_Schlatter/kernelSGS/analysis");
+	setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis_v2");
 	defineConstant("simID", getSeed());
 	defineCfgParam("taskID", 1);
-	defineCfgParam("runname", "other");
-//	createDirectory(("../output/" + runname + "/" + asInteger(taskID) + '_' + simID));
-	defineCfgParam("simplInt",1); 	// tree sequence simplification interval
+	defineCfgParam("runname", "test_fst_metrics_50k");
+	createDirectory(("../output/" + runname + "/" + asInteger(taskID)+ '_' + simID));
+	defineConstant("OutputDirectoryName",("../output/" + runname+ "/" + asInteger(taskID)+ '_' + simID));
+	
+	defineCfgParam("simplInt",5); 	// tree sequence simplification interval
 	
 	//------------------------------------
 	// biological parameters
 	//------------------------------------
-//	defineCfgParam("N_sponge",50000); // population size (when habitat is saturated)
-//	defineCfgParam("F_goby",50); // number of offspring per female
-//	defineCfgParam("NMAX",0.2); // larval navigation distance
-//	defineCfgParam("MATECHOICE_DIST",0.15); // mate choice radius = 10m in reality; greater to ensure pop persistence
-
-	// fast, for debugging
+	
+	// realistic
 	defineCfgParam("N_sponge",500000); // population size (when habitat is saturated)	
 	defineCfgParam("F_goby",5); // number of offspring per female
-	defineCfgParam("NMAX",0.2); // larval navigation distance
-	defineCfgParam("MATECHOICE_DIST", 0.03); // mate choice radius = 10m in reality; greater to ensure pop persistence
-
-
+	defineCfgParam("NMAX",0.04); // larval navigation distance
+	defineCfgParam("MATECHOICE_DIST", 0.04); // mate choice radius ~10m in reality; greater to ensure pop persistence
+	
+	// decreased pop size for simulation speed
+	//defineCfgParam("N_sponge",50000); // population size (when habitat is saturated)
+	//defineCfgParam("F_goby",4); // number of offspring per female
+	//defineCfgParam("NMAX",0.1); // larval navigation distance
+	//defineCfgParam("MATECHOICE_DIST",0.15); // mate choice radius
+	
+	// fast, for debugging
+	//	defineCfgParam("N_sponge",5000); // population size (when habitat is saturated)
+	//	defineCfgParam("F_goby",4); // number of offspring per female
+	//	defineCfgParam("NMAX",0.5); // larval navigation distance
+	//	defineCfgParam("MATECHOICE_DIST",0.6); // mate choice radius
+	
+	
 	initializeSLiMModelType("nonWF");
 	
 	//------------------------------------	
@@ -41,6 +51,13 @@ species all initialize(){
 	
 	//sponges checking for settlers
 	initializeInteractionType(3,"xy",maxDistance=0);
+	
+	//sponges picking adults for FST calculations
+	initializeInteractionType(4,"xy",maxDistance=0.5);
+	
+	//pick sponges to represent each sample site
+	initializeInteractionType(5,"xy",maxDistance=1);
+
 }
 
 //------------------------------------
@@ -55,15 +72,15 @@ species sponge initialize() {
 
 species goby initialize() {
 	initializeSpecies(avatar='G',color='blue');
-	initializeSLiMOptions(dimensionality="xy");
-	//initializeTreeSeq(simplificationInterval=asInteger(simplInt)); // simplify tree sequence every ## ticks
+	initializeSLiMOptions(keepPedigrees=T, dimensionality="xy");
+	initializeTreeSeq(simplificationInterval=simplInt);
 	
 	// genetics
 	initializeMutationType("m1", 0.5, "f", 0.0); //neutral
 	m1.convertToSubstitution = T;
 	initializeGenomicElementType("g1", m1, 1.0);
 	initializeGenomicElement(g1, 0, 99999); // for now, use one chromosome
-	initializeMutationRate(0);
+	initializeMutationRate(0); // we'll add mutations after the fact
 	initializeRecombinationRate(1.5e-8); // per base position per gamete, 1cM/Mbp=1e-8 in SLiM's units. Lit says 1.5cM/Mbp, so set to 1.5e-8.
 	initializeSex("A"); // Keep track of males and females ecologically, but don't need sex chromosomes
 }
@@ -73,23 +90,22 @@ species goby initialize() {
 //------------------------------------
 ticks all 1 early() {
 	// add one population each of sponges (p1) and gobies (p2)
-	sponge.addSubpop("p1", asInteger(N_sponge)); //sponges
+	sponge.addSubpop("p1", asInteger(N_sponge));
 	goby.addSubpop("p2",asInteger(round(0.9*N_sponge)));
-//	goby.addSubpop("p2",6);
-		
+	
 	// map png file (created by 1_GenerateMapAndParams.Rmd)
 	mapImage = Image("../data/map_SLiM.png");
 	
 	// connect the populations to the map
-	p1.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
-	map = p1.defineSpatialMap("bbr", "xy", 1.0 - mapImage.floatB, // reef=1, water=0
-		valueRange=c(0.0, 1.0), colors=c("white","black"));
+	p1.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km (from dist_x and dist_y in mapmaking Rmd file)
+	map = p1.defineSpatialMap("bbr", "xy", 1.0 - mapImage.floatB,
+		valueRange=c(0.0, 1.0), colors=c("white","black"));  // reef=1, water=0
 	defineConstant("MAP",map); // global constant for use in dispersal later on
-	p2.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714)); // distances in km: from dist_x and dist_y in Rmd file
-	p2.addSpatialMap(map);	
-			
+	p2.setSpatialBounds(c(0.0, 0.0, 123.286, 261.714));
+	p2.addSpatialMap(map);
+	
 	// set spatial positions of sponges (anywhere on reef)
-	// (code credit: https://github.com/MesserLab/SLiM-Extras)
+	// code credit: https://github.com/MesserLab/SLiM-Extras
 	leftToDraw = p1.individuals;
 	while (size(leftToDraw) > 0){
 		positions = p1.pointUniform(size(leftToDraw));
@@ -102,34 +118,47 @@ ticks all 1 early() {
 		}
 	}
 	
+	// make a list of one sponge representing each empirical sampling site (for FST calcs later)
+	i5.evaluate(p1); // to get distance from each sponge to sites
+	sample_locations = readCSV(filePath = "../data/sgs_sites_SLiM.csv", colNames = T, colTypes = "ffsis", sep = ",");
+	sample_sponges = integer(length = 	length(sample_locations.getValue("x"))); // create a vector to store indices of chosen sponges
+	
+	for(i in 0:(length(sample_locations.getValue("x"))-1)){
+		site_pt = c(sample_locations.getValue("x")[i],sample_locations.getValue("y")[i]);
+		all_dists = i5.distanceFromPoint(site_pt,p1.individuals);
+		sample_sponges[i] = whichMin(all_dists); //store index of the chosen individual. Sponges don't change throughout the simulation (I checked, and indices are the same at the end), so this is OK.
+	}
+	defineConstant("Sample_sponges",sample_sponges); // save the indices for later
+	
 	// place gobies in sponge positions
 	positions = p1.sampleIndividuals(size(p2.individuals)).spatialPosition;
 	p2.individuals.setSpatialPosition(positions);
 	
-	// output header
+	// console output header
 	defineConstant("start",clock());
 	catn("simID="+simID+"\ntaskID="+taskID+"\nrunname="+runname+"\nsimplInt="+simplInt+"\n");
-	catn("N_sponge="+N_sponge+"\nF_goby="+F_goby+"\nNMAX="+NMAX+"\nMATECHOICE_DIST="+MATECHOICE_DIST+"\n");
-	catn('tick popsize nomate foundsponge lostcomp');
+	catn("N_sponge="+N_sponge+"\nF_goby="+F_goby+"\nNMAX="+NMAX+"\nMATECHOICE_DIST="+MATECHOICE_DIST+"\nSAMPLE_RADIUS="+0.5+"\n");
+	catn('t n_adult nomate foundsponge');
 
 }
 
 //------------------------------------
 // output: log file and sponge data
-// pick appropriate log interval!
 //------------------------------------
-//ticks all 3 early(){	// wait until tick 3 so any global variables we need are defined, etc.
-//	// log file	
-//	log = community.createLogFile(("../output/" + simID + "/log_" + simID + ".txt"),logInterval=1000);
-//	log.addCycle(goby);
-//	log.addCustomColumn("popsize","popsize;");
-//	//log.addCustomColumn("nomate","nomate;");
-//	//log.addCustomColumn("foundsponge","foundsponge;");
-//	
-//	// output sponge data once at the beginning (since it doesn't change), so we can re-run sim if we want	
-//	defineGlobal("SO_PATH", "../output/" + simID + "/so_" + simID + "_sponge");	
-//	sponge.outputFull(filePath = SO_PATH);
-//	}
+ticks all 3 early(){	// wait until tick 3 so any global variables we need are defined, etc.
+	// log file	
+	log = community.createLogFile((OutputDirectoryName + "/log_" + simID + ".txt"),logInterval=1000);
+	log.addCycle(goby);
+	log.addCustomColumn("popsize","popsize;");
+	//log.addCustomColumn("nomate","nomate;");
+	//log.addCustomColumn("foundsponge","foundsponge;");
+	
+	// output sponge data once at the beginning (since it doesn't change)
+	defineGlobal("SO_PATH", OutputDirectoryName + "/so_" + simID + "_sponge");
+	sponge.outputFull(filePath = SO_PATH);
+}
+//------------------------------------
+
 
 //------------------------------------
 // evaluate mate choice interaction
@@ -138,11 +167,12 @@ ticks goby 2: first(){
 	i2.evaluate(p2); // evaluate mate choice interaction
 	
 	//------------------------------------
-	// output: population size
+	// output: adult population size
 	//------------------------------------
-	// log
-	//defineGlobal('popsize',size(p2.individuals)); 	// total successful recruits
-	// text
+	// log:
+	defineGlobal('popsize',size(p2.individuals)); 	// total successful recruits
+	
+	// console:
 	cat(community.tick);
 	cat(' ' + size(p2.individuals));
 	//------------------------------------
@@ -156,29 +186,30 @@ species goby reproduction(NULL,'F'){
 	if (size(mate)){  //produce offspring
 		clutchSize = rpois(1,asInteger(F_goby));
 		subpop.addCrossed(individual,mate,count=clutchSize);
-		individual.tagL0 = F; // track how many found mates (can remove if we're not doing this)
+		individual.tagL0 = F; // track how many found mates
 	}
-	else individual.tagL0 = T; // track how many found mates (can remove if we're not doing this)
+	else individual.tagL0 = T; // track how many didn't find mates
 }
 
 //------------------------------------
-// displacement
+// dispersal
 //------------------------------------
 //First: move initial distance
 ticks goby 2: early() {
 	larvae = p2.subsetIndividuals(maxAge=0);
 	pos = larvae.spatialPosition;
 	pos = MAP.sampleNearbyPoint(pos,INF,"e",0.36);
+	//sampleNearbyPoint is weighted by value of map (reef=1, open water=0), so only reef sites will be chosen
 	larvae.setSpatialPosition(pos);
-//	p2.deviatePositions(larvae,"stopping",INF,"e",0.36);
 	
 	//------------------------------------
 	// output: nomate (how many didn't find mates)
 	//------------------------------------
 	moms = p2.subsetIndividuals(sex="F",minAge=1);
-	// log
+	// log:
 	//	defineGlobal("nomate", sum(moms.tagL0)/size(moms));
-	// text	
+	
+	// console:	
 	cat(' ' + sum(moms.tagL0)/size(moms));
 	//------------------------------------
 }
@@ -192,18 +223,19 @@ ticks all 2: early(){
 		if(size(settle_site)){  // if a sponge was found
 			larva.setSpatialPosition(settle_site.spatialPosition); //settle there
 		}
-		else larva.tag=0; // 0=larva dies
+		else larva.tag=0; // 0=larva will die
 	}
 	
 	//------------------------------------
 	// output: foundsponge (how many found a sponge)
 	//------------------------------------
-	// log
+	// log:
 	//	defineGlobal('foundsponge',size(larvae[which(larvae.tag==1)])/size(larvae));
-	// text	
-	cat(' ' + size(larvae[which(larvae.tag==1)])/size(larvae));
+	
+	// console:	
+	catn(' ' + size(larvae[which(larvae.tag==1)])/size(larvae));
 	//------------------------------------	
-		
+	
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who didn't find a sponge
 }
 
@@ -224,32 +256,64 @@ ticks all 2: late(){
 		settlers = i3.nearestInteractingNeighbors(spot,count=size(p2.individuals),exerterSubpop=p2);
 		n_sett = size(settlers);
 		if(n_sett>1){ //if there's competition
-			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0; // 0=larva dies
+			settlers[sample(seqLen(n_sett),n_sett-1)].tag=0; // 0=larva will die
 		}
 	}
-	catn(' ' + size(p2.subsetIndividuals(tag=0)));
+	
 	goby.killIndividuals(p2.subsetIndividuals(tag=0)); // remove those who lost competition
 }
 
 
 //------------------------------------
 // output: tree sequences and simulation states
-// pick appropriate output interval!
 //------------------------------------
-////ticks all seq(from=20000,to=500000,by=20000) late() { 
-//ticks all 500 late() {
-//	// tree sequence data
-//	defineGlobal("TS_PATH", "../output/" + simID + "/ts_" + simID + "_t" + community.tick + ".trees");
-//	goby.treeSeqOutput(TS_PATH);	
-//	// goby simulation state for reinput into SLiM
-//	defineGlobal("SO_PATH", "../output/" + simID + "/so_" + simID + "_t" + community.tick);
-//	goby.outputFull(filePath = SO_PATH);
-//}
+
+ticks all c(3,seq(from=5,to=10,by=5)) late() {
+	//ticks all seq(from=10,to=1000,by=10) late() {	
+	// sample site info
+	i4.evaluate(c(p2,p1));
+	p2.individuals.tag=0;
+	for(i in 0:(length(Sample_sponges)-1)){
+		// define the ith sponge
+		sponge_i = p1.individuals[Sample_sponges[i]];
+		// pull out up to 30 individuals within 0.5km of sponge location
+		//		samples_from_site = i4.nearestInteractingNeighbors(receiver = sponge_i, count=30, exerterSubpop=p2);
+		samples_from_site = unique(i4.drawByStrength(receiver = sponge_i, count = 30, exerterSubpop = p2));	// pull out up to 30 individuals within 0.5km of site
+		// drawByStrength samples with replacement. So, if we don't get enough individuals the first time, add some more:
+		reps = 0;
+		while(length(samples_from_site)<30 & reps<4){
+			reps = reps+1;			
+			samples_from_site = unique(c(samples_from_site, i4.drawByStrength(receiver = sponge_i, count = 30, exerterSubpop = p2)));
+			keep = sample(seqLen(length(samples_from_site)), min(length(samples_from_site),30));
+			samples_from_site = samples_from_site[keep];
+		}
+		// tag the sampled individuals w/site number (1:40). Unsampled individuals keep tag=0.
+		samples_from_site.tag = i+1;
+		cat(length(samples_from_site)+ " ");
+	}
+	
+	inds = sortBy(p2.individuals, "pedigreeID");
+	metadataDict = Dictionary("tags",inds.tag, "ids", inds.pedigreeID);
+	
+	// name the tick so files show up in order
+	n_zeros_to_add = 6-nchar(asString(community.tick))	;
+	tickname = paste0(rep("0",n_zeros_to_add),asString(community.tick));
+	catn("TICKNAME: "+tickname);	
+	
+	// tree sequence data
+	defineGlobal("TS_PATH", OutputDirectoryName + "/ts_" + simID + "_t" + tickname + ".trees");
+	catn(TS_PATH);
+	goby.treeSeqOutput(TS_PATH, metadata=metadataDict);
+	
+	// goby simulation state for reinput into SLiM
+	defineGlobal("SO_PATH", OutputDirectoryName + "/so_" + simID + "_t" + tickname);
+	goby.outputFull(filePath = SO_PATH);
+}
 
 //------------------------------------
 // end sim and record time
 //------------------------------------
-ticks all 15 late() {
+ticks all 10 late() {
 	cat('OUT: ' + simID + ', ' + (clock()-start));
 }
 

@@ -8,13 +8,15 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(ggpattern)
 
 setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
 #treefile = "../output/ts_8238198510834684392_t160000"
 treefile = "../output/638463423/ts_638463423_t500"
-fst_all_file = '../output/500k/FST_all.RData'
+#fst_all_file = '../output/500k/FST_all.RData'
+fst_all_file = '../output/FST_all_120k.RData'
 
-fst_sim_new <- fst_sim
+#fst_sim_new <- fst_sim
 ```
 
 
@@ -34,12 +36,12 @@ rm(fst_emp_long)
 
 ########## Load simulated FSTs
 
-files <- list.files(path='../output/500k/FSTs') %>% strsplit(" ")
+files <- list.files(path='../output/FSTs_60k') %>% strsplit(" ")
 fst_sims <- list()
 for (i in 1:length(files)) {
-   load(paste0('../output/500k/FSTs/',files[[i]])) # load fst matrix
-   assign(paste0('fst_sim_',i), fst_sim) # save as "fst_sim_i"
-   fst_sims[[i]] <- fst_sim
+   load(paste0('../output/FSTs_60k/',files[[i]])) # load fst matrix
+   #assign(paste0('fst_sim_',i), fsts) # save as "fst_sim_i"
+   fst_sims[[i]] <- fsts
 }
 
 ########## Combine simulated and empirical
@@ -97,7 +99,6 @@ save(sitepair_dists, file='../data/sitepair_dists.RData')
 ```
 
 ```{r}
-library(ggpattern)
 load(fst_all_file)
 
 all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
@@ -135,6 +136,42 @@ ggplot(data=all_fst_group,aes(x=emp_fst,fill=both_pops_bt,pattern_fill=both_pops
   theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
   labs(title='Empirical',x=NULL,y=NULL)
 ```
+
+```{r,warning=FALSE}
+plotlist <- list()
+mse <- vector()
+mean_fst <- vector()
+v_t <- c(20,60,120,180,240,300)
+
+for(i in 1:length(v_t)){
+  t <- v_t[i]
+  fst_all_file = paste0('../output/FST_all_',t,'k.RData')
+  load(fst_all_file)
+  all_fst_group <- mutate(all_fst_group,both_pops_bt=case_match(both_pops,'BT'~'BB','GT'~'BG','LT'~'BL','TT'~'BB',.default=both_pops))
+  all_fst_group$both_pops_bt <- factor(all_fst_group$both_pops_bt,levels=c('BB','GG','LL','BG','BL','GL'))
+  
+  g <- ggplot(data=all_fst_group,aes(x=sim_med,fill=both_pops_bt,pattern_fill=both_pops_bt,pattern_density=both_pops_bt))+
+    geom_density_pattern(pattern_spacing=0.03,alpha=0.6,pattern_alpha=0.6)+
+    scale_pattern_density_manual(values=c(0,0,0,0.5,0.5,0.5),name='Populations')+
+    scale_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#91bfdb','#91bfdb','#fc8d59'),name='Populations')+
+    scale_pattern_fill_manual(values=c('#91bfdb','#fc8d59','#ffffbf','#fc8d59','#ffffbf','#ffffbf'),name='Populations')+
+    theme_bw()+
+    xlim(0,0.25)+
+    ylim(0,450)+
+    theme(legend.position='none', panel.grid.major = element_blank(),panel.grid.minor=element_blank())+
+    labs(title=paste0('t = ',t),x=NULL,y=NULL)
+  
+  print(g)
+  plotlist[[i]] <- g
+  
+  mse[i] <- mean((all_fst_group$sim_med - all_fst_group$emp_fst)^2)
+  mean_fst[i] <- mean(all_fst_group$sim_med)
+}
+
+library(patchwork)
+#h <- wrap_plots(plotlist,nrow=2)
+```
+
 
 Again, but let's do subsets
 ```{r}

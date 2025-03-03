@@ -18,20 +18,23 @@ initialize(){
 	//------------------------------------
 
 	// realistic...
-	defineCfgParam("K",1643); // target population density at equilibrium	(x 269km^2, gives target pop size)
-	defineCfgParam("F_goby",4); // number of offspring per female
+	defineCfgParam("a",1); // strength of density-dependence, Beverton-Holt
+ 	defineCfgParam("K",1643); // target population density at equilibrium	(x 269km^2, gives target pop size)
+	defineCfgParam("F_goby",1); // number of offspring per female
 	defineCfgParam("SX",0.005); // competition distance. On the order of distance between sponges, ~5m.	
 	defineCfgParam("MATECHOICE_DIST", 0.035); // mate choice radius = 10m in reality; greater to ensure pop persistence
 
 //	// fast, for debugging
+// defineCfgParam("a",1); // strength of density-dependence, Beverton-Holt
 //	defineCfgParam("K",16); // target population density at equilibrium	(x 269km^2, gives target pop size ~4300)
 //	defineCfgParam("F_goby",10); // number of offspring per female
 //	defineCfgParam("SX",0.5); // competition distance. On the order of distance between sponges, ~5m.	
 //	defineCfgParam("MATECHOICE_DIST", 0.5); // mate choice radius = 10m in reality; greater to ensure pop persistence
 	
-//	// faster, for debugging
+//	// faster, for debugging. Persistent w/a=2
+//	defineCfgParam("a",2); // strength of density-dependence, Beverton-Holt
 //	defineCfgParam("K",10); // target population density at equilibrium	(x 269km^2 gives target pop size)
-//	defineCfgParam("F_goby",4); // number of offspring per female
+//	defineCfgParam("F_goby",1); // number of offspring per female
 //	defineCfgParam("SX",0.5); // competition distance. On the order of distance between sponges, ~5m.	
 //	defineCfgParam("MATECHOICE_DIST", 2); // mate choice radius = 10m in reality; greater to ensure pop persistence
 
@@ -171,9 +174,6 @@ reproduction(NULL,'F'){
 	catn(' ' + sum(moms.tagL0)/size(moms));
 	//------------------------------------
 	
-	// remove adults (keep nonoverlapping generations, for consistency w/previous model)
-	sim.killIndividuals(p1.subsetIndividuals(minAge=1));
-	
 	i2.evaluate(p1);
 	
 //	// create local density map to use for competition/fitness calculation
@@ -192,10 +192,9 @@ reproduction(NULL,'F'){
 	density = i2.localPopulationDensity(inds);
 
 	// set fitness (survival) based on local density
-	u = density/(F_goby*K); // divide by K for per unit area; divide by F_goby because we want u=1 to be target # of adults. (Subtract 1 from density for target individual?)
+	u = density/(F_goby*K); // divide by K for per unit area; divide by F_goby because we want u=1 to be target # of adults
 	catn(' '+mean(u));	
-	a=20;
-	inds.fitnessScaling = (1+a)/(F_goby*(1+a*u));
+	inds.fitnessScaling = (1+a)/((1+F_goby)*(1+a*u));
 }
 
 //------------------------------------

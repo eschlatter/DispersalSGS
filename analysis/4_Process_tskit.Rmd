@@ -1,0 +1,155 @@
+---
+title: "Untitled"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd("C:/Users/eschlatter/Dropbox/DispersalSGS/analysis")
+
+library(tidyverse)
+library(vcfR)
+library(adegenet)
+library(hierfstat)
+```
+
+## Issues with loading dartR, because of dependency on SNPRelate. Grabbed this from here: https://github.com/green-striped-gecko/dartR/issues/60
+```{r}
+library(devtools)
+install.packages("BiocManager")
+BiocManager::install(c("SNPRelate", "qvalue"))
+install_github("green-striped-gecko/dartR")
+library(dartR)
+```
+
+
+## Read in Individuals data from tskit
+This is very messy and ugly, but it gets there. The id's are preserved, and the conversion to numeric didn't mess anything up.
+```{r}
+inds <- read_csv('test.csv',col_names=F,show_col_types=FALSE)
+inds <- as.data.frame(t(inds))
+inds <- separate_wider_delim(inds,cols=V1,delim=',',names=c('flags','x','y','zero','parents','array','dtype','pedID','pedp1','pedp2','age','subpop','sex','flags2')) %>%
+  dplyr::select(x,y,pedID,pedp1,pedp2,age,sex)
+inds <- mutate(inds,x=str_trim(str_sub(x,start=18)),pedID=str_trim(str_sub(pedID,-8,-1)),
+               pedp1=str_trim(str_sub(pedp1,-8,-1)),pedp2=str_trim(str_sub(pedp2,-8,-1)),
+               age=str_trim(str_sub(age,-1,-1)),sex=str_trim(str_sub(sex,-1,-1)))
+inds <- mutate(inds,id=0:(nrow(inds)-1),x=as.numeric(x),y=as.numeric(y),age=as.numeric(age))
+```
+
+## Read in sample sites data
+```{r}
+sample_sites <- read_csv('../data/sgs_sites_SLiM',show_col_types=FALSE)
+sample_sites$n <- 30 # there's missing data for a few, so maybe we'll just sample 30 everywhere for now?
+sample_inds <- data.frame(site=numeric(),id=numeric(),dist=numeric()) # to store the sampled individuals
+```
+
+```{r}
+# for each row of sample_sites
+    # find all the members of inds within ## distance
+    # if there are more than sample_sites$n_SNP of them, select n_SNP of them at random
+    # make a list of the Node ID's for the individuals selected
+
+# then run Fst, using a list of the lists of Node ID's as the sample_sets
+
+for(site in 1:nrow(sample_sites)){
+  site_x <- sample_sites$x[site]
+  site_y <- sample_sites$y[site]
+  inds$dist <- sqrt((inds$x-site_x)^2+(inds$y-site_y)^2)
+#  inds[[paste0('site',site,'dist')]] <- sqrt((inds$x-site_x)^2+(inds$y-site_y)^2)
+  
+  temp.df <- data.frame(site=site,id=slice_min(inds,order_by=dist,n=sample_sites$n[site])$id,dist=slice_min(inds,order_by=dist,n=30)$dist)
+  sample_inds <- rbind(sample_inds,temp.df)
+}
+
+which(duplicated(sample_inds$id)) # check for individuals included in more than one sample; there are none
+
+write.csv(sample_inds,file='sample_inds.csv')
+#write.csv(inds,file='inds_test.csv') # with the commented line above, just use this to check that the process works. It does.
+```
+
+## Read in VCF file from tskit
+
+```{r}
+vcf <- read.vcfR("temp.vcf")
+vcf_sub <- vcf # make a copy
+
+# vcf contains 3 elements: @meta, @fix, @gt.
+# @meta is metadata
+# @fix and @gt are tabular: one row for each variant (SNP), some columns of data about the variants (in @fix), and one column for each individual in the sample (in @gt).
+
+# pull out just the columns of @gt that match sample_inds$id, and store them in vcf_sub@gt
+sample_inds <- mutate(sample_inds,gt_name=paste0("tsk_",id))
+col_keep <- colnames(vcf@gt) %in% sample_inds$gt_name
+col_keep[1] <- TRUE #keep first column of @gt (called FORMAT)
+vcf_sub@gt <- vcf_sub@gt[,col_keep]
+str(vcf_sub@gt)
+
+# create a factor of the population of each individual in vcf_sub
+myPops <- as.factor(arrange(sample_inds,id)$site)
+
+# calculate population differentiation
+myDiff <- genetic_diff(vcf_sub,myPops,method="nei")
+
+# #print all the variants for individuals 3-10
+# vcf@gt[,3:10]
+```
+
+## Convert to genind, use adegenet
+
+```{r}
+my_genind <- vcfR2genind(vcf_sub)
+
+my_genind
+
+my_genind@tab[1:100,1:10]
+
+my_genind@pop <- as.factor(arrange(sample_inds,id)$site)
+
+fsts <- genet.dist(my_genind,method="Nei87")
+```
+##dartR: convert genind to genlight
+
+```{r}
+my_genlight <- gi2gl(my_genind)
+
+
+```
+
+
+## Try hierfstat. This seems like an extra step, but whatever
+
+```{r}
+hfs <- genind2hierfstat(my_genind)
+# this has a bug. Genotypes that should be '00' are just '0'
+hfs_new <- as.data.frame(lapply(hfs[,-1],case_match, 0~33, 1~34, 10~43, 11~44))
+hfs[,-1] <- hfs_new
+hfs$pop <- as.numeric(hfs$pop)
+hfs <- mutate_at(hfs,2:ncol(hfs),as.integer)
+hfs <- rename(hfs,Locality=pop)
+
+data(gtrunchier)
+
+str(hfs)
+str(gtrunchier[,-2])
+
+pfsts <- pairwise.neifst(hfs)
+
+# Okay, I don't know what the formatting issue is here, and I'm tired of trying to figure it out.
+```
+
+## Try StAMPP.
+
+```{r}
+library(StAMPP)
+
+fsts <- stamppFst(my_genlight,nboots=1)
+```
+
+## Or dartR?
+
+```{r}
+fsts <- gl.fst.pop(my_genlight,nboots=1)
+```
+
+

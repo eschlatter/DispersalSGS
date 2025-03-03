@@ -1,0 +1,80 @@
+---
+title: "Untitled"
+author: "Your Name Here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Get an idea of the fraction of larvae that would land on a 0.5-km wide reef, given our dispersal kernel
+```{r}
+library(tidyverse)
+
+survivors=c()
+
+for(i in 1:100){
+  reef <- data.frame(x = c(0,2.5,2.5,0),y=c(-10,-10,10,10))
+  
+  larv <- data.frame(dist=rexp(100,rate=0.36),direc=runif(n=100,min=0,max=2*pi)) %>%
+    mutate(x=dist*cos(direc),y=dist*sin(direc),onreef=(x>0 & x<2.5))
+  
+  survivors[i] <- sum(larv$onreef)
+  }
+
+hist(survivors)
+
+
+ggplot(reef)+
+  geom_polygon(data=reef,aes(x=x,y=y),fill='white')+
+  geom_point(data=larv,aes(x=x,y=y,color=onreef))+
+  geom_point(data=data.frame(x=0,y=0),aes(x=x,y=y),color='black')+
+  ggtitle(paste(survivors))
+
+```
+
+
+## Parse text output about parameter combos:
+```{r}
+load(file='cluster_output_test.RData')
+
+parsed_output
+
+output=matrix(ncol=7,nrow=4)
+colnames(output) <- c('N_sponge','F_goby','NMAX','MATECHOICE_DIST','nomate','popsize','time')
+for(i in 1:length(parsed_output)){
+  output[i,] <- as.numeric(strsplit(parsed_output[[i]],split=',')[[1]])
+}
+
+output
+```
+
+## Parse text output about parameter combos:
+```{r}
+load(file='simpl_ints_20240708.RData')
+
+output=matrix(ncol=3,nrow=length(parsed_output))
+colnames(output) <- c('SimplInt','simID','time')
+for(i in 1:length(parsed_output)){
+  output[i,] <- as.numeric(strsplit(parsed_output[[i]],split=',')[[1]])
+}
+
+output
+
+plot(output[,1],output[,3], type = 'b')
+```
+
+## Parse text output about parameter combos:
+```{r}
+load(file='simpl_ints.RData')
+
+output=matrix(ncol=3,nrow=length(parsed_output))
+colnames(output) <- c('SimplInt','simID','time')
+for(i in 1:length(parsed_output)){
+  output[i,] <- as.numeric(strsplit(parsed_output[[i]],split=',')[[1]])
+}
+
+output
+
+plot(output[,1],output[,3], type = 'b')
+```
+
+

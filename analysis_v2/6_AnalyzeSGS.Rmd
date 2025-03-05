@@ -38,12 +38,12 @@ save(fst_emp, file='../data/FST_emp.RData')
 
 ```{r, eval=FALSE}
 ########## Process data into a format to use in the analyses in this file
-n_run=1
+n_run=3
 
 ## load data
 load(file='../data/FST_emp.RData') # empirical FSTs
 sample_sites <- read_csv('../data/sgs_sites_SLiM.csv',show_col_types=FALSE) #info on sample sites
-fst_folder_path <- paste0('C:/Users/eschlatter/Dropbox/DispersalSGS/analysis_v2/full_pop_run/A',n_run)
+fst_folder_path <- paste0('../data/full_pop_run/A',n_run)
 load(file=paste0(fst_folder_path,"/FST_all.RData")) #sequence of simulated FST data
 
 ## strip site1 and site2, and re-add them, so they're in the right order (match the order in sites)
@@ -84,12 +84,12 @@ fst_summary <- filter(fst_all_sim, tick>2500) %>% # remove the pre-equilibrium v
   rename(fst_emp=fst) %>%
   filter(!is.na(fst_emp))
 
-#save(fst_all_sim,fst_summary,file=paste0("full_pop_run/fst_data_for_analysis_A",n_run,".RData"))
+#save(fst_all_sim,fst_summary,file=paste0("../data/full_pop_run/fst_data_for_analysis_A",n_run,".RData"))
 ```
 
 ```{r}
 n_run=1
-load(paste0("full_pop_run/fst_data_for_analysis_A",n_run,".RData"))
+load(paste0("../data/full_pop_run/fst_data_for_analysis_A",n_run,".RData"))
 load(file='../data/FST_emp.RData') # empirical FSTs
 ```
 
@@ -97,19 +97,27 @@ load(file='../data/FST_emp.RData') # empirical FSTs
 ## Dynamics
 
 ```{r}
-all_by_tick <- group_by(fst_all_sim,tick) %>% summarize(mean_fst=mean(fst))
+all_by_tick <- group_by(fst_all_sim,tick) %>% summarize(mean_fst=mean(fst_sim))
+
+fst_all_sim <- fst_all_sim %>%
+  mutate(both_pops=case_match(both_regions,
+                              c('NN','CC','TT','CN','CT','NT')~'BB', 
+                              c('CG','GN','GT')~'BG',
+                              c('CL','LN','LT')~'BL',
+                              .default=both_regions))
+
 group_by(fst_all_sim,tick,both_pops) %>%
-  summarize(pop_fst=mean(fst)) %>%
+  summarize(pop_fst=mean(fst_sim)) %>%
   ggplot(aes(x=tick,y=pop_fst,color=both_pops))+
   geom_line()+
   geom_line(data=all_by_tick,aes(x=tick,y=mean_fst),color='black')
 
-group_by(fst_all_sim,tick,both_pops) %>%
-  summarize(pop_fst=mean(fst)) %>%
-  ggplot(aes(x=tick,y=pop_fst,color=both_pops))+
+group_by(fst_all_sim,tick,both_regions) %>%
+  summarize(pop_fst=mean(fst_sim)) %>%
+  ggplot(aes(x=tick,y=pop_fst,color=both_regions))+
   geom_line()+
   geom_hline(aes(yintercept=0))+
-  facet_wrap(vars(both_pops), scales="free")#+
+  facet_wrap(vars(both_regions), scales="free")#+
   geom_smooth(method='lm',se=FALSE)
   
 ggplot(data=all_by_tick,aes(x=tick,y=mean_fst))+
@@ -118,11 +126,410 @@ ggplot(data=all_by_tick,aes(x=tick,y=mean_fst))+
 
 ```
 
+## Predicted vs observed FST plots
+
+```{r}
+fst_summary <- fst_summary %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3)))
+```
+
+
+```{r}
+# overview: all points
+colors_all=c('1'="#66CCEE",'2'="#CCBB44",'3'="#AA3377")
+ggplot(fst_summary,aes(y=fst_emp,x=mean))+
+  geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd, color=regions_grp),position = position_jitter(seed = 100), alpha=0.15)+
+  geom_point(aes(color=regions_grp), position = position_jitter(seed = 100))+
+  geom_abline(aes(slope=1,intercept=0))+
+  theme_bw()+
+  scale_color_manual(values=colors_all)+
+  #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+  coord_fixed()+
+  theme(legend.position="none",axis.title.x=element_blank(),axis.title.y=element_blank())
+
+# group 1: N/C/T <--> G <--> L
+shapes_1=c('GL'=8,'CG'=0,'GN'=1,'GT'=2,'CL'=15,'LN'=16,'LT'=17)
+fst_summary %>%
+  filter(regions_grp==1) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CL','LN','LT','CG','GN','GT','GL'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[1],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[1],fill=colors_all[1],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[1], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.76),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_1)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 2: N <--> C <--> T
+shapes_2=c('CN'=8,'NT'=1,'CT'=16)
+fst_summary %>%
+  filter(regions_grp==2) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CN','NT','CT'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[2],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[2],fill=colors_all[2],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[2], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.72),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_2)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 3: withins
+shapes_3=c('CC'=0,'NN'=2,'TT'=8,'GG'=16,'LL'=17)
+fst_summary %>%
+  filter(regions_grp==3) %>%
+  mutate(both_regions=factor(both_regions,levels=c('NN','CC','TT','LL','GG'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[3],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[3],fill=colors_all[3],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[3], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.68),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_3)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+```
+
+
+### Broad-scale
+```{r}
+ggplot(fst_summary,aes(x=fst_emp,y=mean))+
+  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd, color=both_pops),position = position_jitter(seed = 100), alpha=0.15)+
+  geom_point(aes(color=both_pops), position = position_jitter(seed = 100))+
+  geom_abline(aes(slope=1,intercept=0))+
+  theme_minimal()+
+  xlim(c(-0.005, 0.032))+
+  ylim(c(-0.005, 0.032))+
+  labs(x = "empirical FST", y="simulated FST (mean+/-sd over 7500 generations)")+
+  coord_flip()
+```
+### Fine-scale
+```{r}
+ggplot(filter(fst_summary,both_regions %in% c('NN','CC','TT','CN','NT','CT')),aes(x=fst_emp,y=mean))+
+  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd, color=both_regions),position = position_jitter(seed = 100), alpha=0.15)+
+  geom_point(aes(color=both_regions, shape=both_regions), position = position_jitter(seed = 100))+
+  scale_color_discrete_qualitative(palette="Harmonic")+
+  geom_abline(aes(slope=1,intercept=0))+
+  theme_minimal()+
+  labs(x = "empirical FST", y="simulated FST (mean+/-sd over 7500 generations)")+
+  coord_flip()
+```
 
 
 ## Linear model of observed vs predicted FSTs
 To think about using the values over time, take a look at: https://bbolker.github.io/mixedmodels-misc/notes/corr_braindump.html
 
+### Updated version.
+#### Use the mean
+Model selection:
+```{r}
+## prepare data
+fst_data <- fst_summary %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3))) %>%
+  mutate(regions_grp_2=factor(case_match(regions_grp,'1'~'A',c('2','3')~'B'))) %>% #within-B and within-site grouped together in '2'
+  mutate(regions_grp_3=factor(case_match(regions_grp,c('1','2')~'C','3'~'D'))) %>% #within-B and B-atolls grouped together in '1'
+  mutate(site1=str_split_i(sites,"\\.",1)) %>%
+  mutate(site2=str_split_i(sites,"\\.",2)) %>%
+  rename(sim_fst_mean=mean)
+
+## make model matrix W to account for nonindependence among site pairs
+site_list <- unique(c(fst_data$site1,fst_data$site2))
+W = matrix(nrow=nrow(fst_data),ncol=length(site_list))
+colnames(W) = site_list
+rownames(W) = fst_data$sites
+for(i in 1:nrow(W)){
+  for(j in 1:ncol(W)){
+    W[i,j] = ifelse((site_list[j] == fst_data$site1[i]) | (site_list[j] == fst_data$site2[i]), 1, 0)
+  } # j (sites)
+} # i (site pairs) 
+fst_data$sitenames <- rep(site_list,length.out=nrow(fst_data)) ## make a dummy column with the right item names
+
+## make sure to use ML instead of REML, because we're doing an ANOVA and the fixed effects are different among models.
+## model 1: no region pair group
+lmod1 <- lFormula(fst_emp~sim_fst_mean+(1|sitenames), data=fst_data, REML=FALSE) ## create the model
+lmod1$reTrms$Zt <- lmod1$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun1 <- do.call(mkLmerDevfun, lmod1) ## makes a deviance function
+opt1 <- optimizeLmer(devfun1) ## takes a deviance function and optimizes over theta
+m1 <- mkMerMod(environment(devfun1), opt1, lmod1$reTrms, fr = lmod1$fr) ## produces a lmerMod object from previous steps
+
+## model 2: region pair group included as a predictor: group A (B-atolls) and group B (within-B, within-region)
+lmod2 <- lFormula(fst_emp~sim_fst_mean+regions_grp_2+sim_fst_mean*regions_grp_2+(1|sitenames), data=fst_data, REML=FALSE) ## create the model
+lmod2$reTrms$Zt <- lmod2$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun2 <- do.call(mkLmerDevfun, lmod2) ## makes a deviance function
+opt2 <- optimizeLmer(devfun2) ## takes a deviance function and optimizes over theta
+m2 <- mkMerMod(environment(devfun2), opt2, lmod2$reTrms, fr = lmod2$fr) ## produces a lmerMod object from previous steps
+
+## model 3: region pair group included as a predictor: group C (B-atolls, within-B) and group D (within-region)
+lmod3 <- lFormula(fst_emp~sim_fst_mean+regions_grp_3+sim_fst_mean*regions_grp_3+(1|sitenames), data=fst_data, REML=FALSE) ## create the model
+lmod3$reTrms$Zt <- lmod3$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun3 <- do.call(mkLmerDevfun, lmod3) ## makes a deviance function
+opt3 <- optimizeLmer(devfun3) ## takes a deviance function and optimizes over theta
+m3 <- mkMerMod(environment(devfun3), opt3, lmod3$reTrms, fr = lmod3$fr) ## produces a lmerMod object from previous steps
+
+## model 4: region pair group included as a predictor
+lmod4 <- lFormula(fst_emp~sim_fst_mean+regions_grp+sim_fst_mean*regions_grp+(1|sitenames), data=fst_data, REML=FALSE) ## create the model
+lmod4$reTrms$Zt <- lmod4$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun4 <- do.call(mkLmerDevfun, lmod4) ## makes a deviance function
+opt4 <- optimizeLmer(devfun4) ## takes a deviance function and optimizes over theta
+m4 <- mkMerMod(environment(devfun4), opt4, lmod4$reTrms, fr = lmod4$fr) ## produces a lmerMod object from previous steps
+
+anova(m1,m2,m3,m4)
+anova(m1,m3,m2,m4)
+```
+Slopes:
+```{r}
+coefs_meandata <- as.data.frame(summary(m4)$coefficients) %>% rownames_to_column()
+CI_meandata <- as.data.frame(confint(m4)) %>% rownames_to_column()
+
+coefs_meandata <- left_join(coefs_meandata,CI_meandata,by='rowname')
+colnames(coefs_meandata) <- c('rowname','est','se','t','l95','u95')
+
+fit_to_grp_meandata <- data.frame(grp=factor(c('1','2','3')), slope=NA, intercept=NA)
+fit_to_grp_meandata$intercept=c(coefs_meandata$est[1],coefs_meandata$est[1]+coefs_meandata$est[3],coefs_meandata$est[1]+coefs_meandata$est[4])
+fit_to_grp_meandata$slope=c(coefs_meandata$est[2],coefs_meandata$est[2]+coefs_meandata$est[5],coefs_meandata$est[2]+coefs_meandata$est[6])
+```
+```{r}
+## Now make a plot with the fitted lines on it:
+fst_summary <- fst_summary %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3)))
+
+# overview: all points
+colors_all=c('1'="#66CCEE",'2'="#CCBB44",'3'="#AA3377")
+ggplot(fst_summary,aes(y=fst_emp,x=mean))+
+  geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd, color=regions_grp),position = position_jitter(seed = 100), alpha=0.15)+
+  geom_point(aes(color=regions_grp), position = position_jitter(seed = 100))+
+  geom_abline(aes(slope=1,intercept=0))+
+  theme_bw()+
+  scale_color_manual(values=colors_all)+
+  #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+  coord_fixed()+
+  theme(legend.position="none",axis.title.x=element_blank(),axis.title.y=element_blank())
+
+# group 1: N/C/T <--> G <--> L
+shapes_1=c('GL'=8,'CG'=0,'GN'=1,'GT'=2,'CL'=15,'LN'=16,'LT'=17)
+fst_summary %>%
+  filter(regions_grp==1) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CL','LN','LT','CG','GN','GT','GL'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[1],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[1],fill=colors_all[1],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    geom_abline(aes(slope=fit_to_grp_meandata$slope[1],intercept=fit_to_grp_meandata$intercept[1]),color=colors_all[1])+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[1], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.76),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_1)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 2: N <--> C <--> T
+shapes_2=c('CN'=8,'NT'=1,'CT'=16)
+fst_summary %>%
+  filter(regions_grp==2) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CN','NT','CT'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[2],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[2],fill=colors_all[2],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_meandata$slope[2],intercept=fit_to_grp_meandata$intercept[2]),color=colors_all[2])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[2], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.72),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_2)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 3: withins
+shapes_3=c('CC'=0,'NN'=2,'TT'=8,'GG'=16,'LL'=17)
+fst_summary %>%
+  filter(regions_grp==3) %>%
+  mutate(both_regions=factor(both_regions,levels=c('NN','CC','TT','LL','GG'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[3],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[3],fill=colors_all[3],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_meandata$slope[3],intercept=fit_to_grp_meandata$intercept[3]),color=colors_all[3])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[3], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.68),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_3)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+```
+
+#### Use all the data, not just the mean.
+```{r}
+## prepare data
+fst_all_sim <- fst_all_sim %>%
+  filter(tick>2500) %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3))) %>%
+  mutate(regions_grp_2=factor(case_match(regions_grp,'1'~'A',c('2','3')~'B'))) %>% #within-B and within-site grouped together in 'B'
+  mutate(regions_grp_3=factor(case_match(regions_grp,c('1','2')~'C','3'~'D'))) #within-B and B-atolls grouped together in 'C'
+
+## make model matrix W to account for nonindependence among site pairs
+site_list <- unique(c(fst_all_sim$site1,fst_all_sim$site2))
+W = matrix(nrow=nrow(fst_all_sim),ncol=length(site_list))
+colnames(W) = site_list
+rownames(W) = fst_all_sim$sites
+for(i in 1:nrow(W)){
+  for(j in 1:ncol(W)){
+    W[i,j] = ifelse((site_list[j] == fst_all_sim$site1[i]) | (site_list[j] == fst_all_sim$site2[i]), 1, 0)
+  } # j (sites)
+} # i (site pairs)
+fst_all_sim$sitenames <- rep(site_list,length.out=nrow(fst_all_sim)) ## make a dummy column with the right item names
+
+## model 1: no region pair group
+lmod1 <- lFormula(fst_emp~fst_sim+(1|sitenames), data=fst_all_sim, REML=FALSE) ## create the model
+lmod1$reTrms$Zt <- lmod1$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun1 <- do.call(mkLmerDevfun, lmod1) ## makes a deviance function
+opt1 <- optimizeLmer(devfun1) ## takes a deviance function and optimizes over theta
+m1 <- mkMerMod(environment(devfun1), opt1, lmod1$reTrms, fr = lmod1$fr) ## produces a lmerMod object from previous steps
+
+## model 2: region pair group included as a predictor: group A (B-atolls) and group B (within-B, within-region)
+lmod2 <- lFormula(fst_emp~fst_sim+regions_grp_2+fst_sim*regions_grp_2+(1|sitenames), data=fst_all_sim, REML=FALSE) ## create the model
+lmod2$reTrms$Zt <- lmod2$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun2 <- do.call(mkLmerDevfun, lmod2) ## makes a deviance function
+opt2 <- optimizeLmer(devfun2) ## takes a deviance function and optimizes over theta
+m2 <- mkMerMod(environment(devfun2), opt2, lmod2$reTrms, fr = lmod2$fr) ## produces a lmerMod object from previous steps
+
+## model 3: region pair group included as a predictor: group C (B-atolls, within-B) and group D (within-region)
+lmod3 <- lFormula(fst_emp~fst_sim+regions_grp_3+fst_sim*regions_grp_3+(1|sitenames), data=fst_all_sim, REML=FALSE) ## create the model
+lmod3$reTrms$Zt <- lmod3$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun3 <- do.call(mkLmerDevfun, lmod3) ## makes a deviance function
+opt3 <- optimizeLmer(devfun3) ## takes a deviance function and optimizes over theta
+m3 <- mkMerMod(environment(devfun3), opt3, lmod3$reTrms, fr = lmod3$fr) ## produces a lmerMod object from previous steps
+
+## model 4: region pair group included as a predictor
+lmod4 <- lFormula(fst_emp~fst_sim+regions_grp+fst_sim*regions_grp+(1|sitenames), data=fst_all_sim, REML=FALSE) ## create the model
+lmod4$reTrms$Zt <- lmod4$reTrms$Ztlist[[1]] <- Matrix(t(W))  ## give the actual model matrix Zt to the model
+devfun4 <- do.call(mkLmerDevfun, lmod4) ## makes a deviance function
+opt4 <- optimizeLmer(devfun4) ## takes a deviance function and optimizes over theta
+m4 <- mkMerMod(environment(devfun4), opt4, lmod4$reTrms, fr = lmod4$fr) ## produces a lmerMod object from previous steps
+
+anova(m1,m3,m4)
+anova(m1,m2,m4)
+
+```
+
+
+```{r}
+coefs_alldata <- as.data.frame(summary(m4)$coefficients) %>% rownames_to_column()
+CI_alldata <- as.data.frame(confint(m4)) %>% rownames_to_column()
+coefs_alldata <- left_join(coefs_alldata,CI_alldata,by='rowname')
+colnames(coefs_alldata) <- c('rowname','est','se','t','l95','u95')
+
+fit_to_grp_alldata <- data.frame(grp=factor(c('1','2','3')), slope=NA, intercept=NA)
+fit_to_grp_alldata$intercept=c(coefs_alldata$est[1],coefs_alldata$est[1]+coefs_alldata$est[3],coefs_alldata$est[1]+coefs_alldata$est[4])
+fit_to_grp_alldata$slope=c(coefs_alldata$est[2],coefs_alldata$est[2]+coefs_alldata$est[5],coefs_alldata$est[2]+coefs_alldata$est[6])
+```
+
+```{r}
+## Now make a plot with the fitted lines on it:
+fst_summary <- fst_summary %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3)))
+
+# overview: all points
+colors_all=c('1'="#66CCEE",'2'="#CCBB44",'3'="#AA3377")
+ggplot(fst_summary,aes(y=fst_emp,x=mean))+
+  geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd, color=regions_grp),position = position_jitter(seed = 100), alpha=0.15)+
+  geom_point(aes(color=regions_grp), position = position_jitter(seed = 100))+
+  geom_abline(aes(slope=1,intercept=0))+
+  theme_bw()+
+  scale_color_manual(values=colors_all)+
+  #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+  coord_fixed()+
+  theme(legend.position="none",axis.title.x=element_blank(),axis.title.y=element_blank())
+
+# group 1: N/C/T <--> G <--> L
+shapes_1=c('GL'=8,'CG'=0,'GN'=1,'GT'=2,'CL'=15,'LN'=16,'LT'=17)
+fst_summary %>%
+  filter(regions_grp==1) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CL','LN','LT','CG','GN','GT','GL'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[1],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[1],fill=colors_all[1],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    geom_abline(aes(slope=fit_to_grp_alldata$slope[1],intercept=fit_to_grp_alldata$intercept[1]),color=colors_all[1])+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[1], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.76),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_1)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 2: N <--> C <--> T
+shapes_2=c('CN'=8,'NT'=1,'CT'=16)
+fst_summary %>%
+  filter(regions_grp==2) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CN','NT','CT'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[2],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[2],fill=colors_all[2],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_alldata$slope[2],intercept=fit_to_grp_alldata$intercept[2]),color=colors_all[2])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[2], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.72),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_2)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 3: withins
+shapes_3=c('CC'=0,'NN'=2,'TT'=8,'GG'=16,'LL'=17)
+fst_summary %>%
+  filter(regions_grp==3) %>%
+  mutate(both_regions=factor(both_regions,levels=c('NN','CC','TT','LL','GG'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[3],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[3],fill=colors_all[3],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_alldata$slope[3],intercept=fit_to_grp_alldata$intercept[3]),color=colors_all[3])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[3], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.68),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_3)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+```
+
+```{r}
+grp_1 <- lm(fst_emp~mean, data=subset(fst_summary,regions_grp=='1'))
+summary(grp_1)
+```
+
+### Old
 For now, I'm just using the mean value (simulated over time) for each site pair as the predictor. Accounting for nonindependence b/c of reuse of sites using a multiple membership (i.e., cross-classified) model.
 ```{r}
 fst_data <- left_join(fst_summary, fst_emp,by='sites') %>%
@@ -156,6 +563,7 @@ m1 <- mkMerMod(environment(devfun), opt, lmod$reTrms, fr = lmod$fr) ## produces 
 
 summary(m1)
 ```
+
 ```{r plotresults}
 dd <- tidy(m1, effects="ran_vals")
 dd <- transform(dd, level=reorder(level,estimate))
@@ -706,31 +1114,6 @@ ggplot(CI_boot,aes(y=region_pair,x=Estimate))+
 ```
 
 
-## Predicted vs observed FST plots
-
-### Broad-scale
-```{r}
-ggplot(fst_summary,aes(x=fst_emp,y=mean))+
-  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd, color=both_pops),position = position_jitter(seed = 100), alpha=0.15)+
-  geom_point(aes(color=both_pops), position = position_jitter(seed = 100))+
-  geom_abline(aes(slope=1,intercept=0))+
-  theme_minimal()+
-  xlim(c(-0.005, 0.032))+
-  ylim(c(-0.005, 0.032))+
-  labs(x = "empirical FST", y="simulated FST (mean+/-sd over 7500 generations)")+
-  coord_flip()
-```
-### Fine-scale
-```{r}
-ggplot(filter(fst_summary,both_regions %in% c('NN','CC','TT','CN','NT','CT')),aes(x=fst_emp,y=mean))+
-  geom_errorbar(aes(ymin=mean-sd,ymax=mean+sd, color=both_regions),position = position_jitter(seed = 100), alpha=0.15)+
-  geom_point(aes(color=both_regions, shape=both_regions), position = position_jitter(seed = 100))+
-  scale_color_discrete_qualitative(palette="Harmonic")+
-  geom_abline(aes(slope=1,intercept=0))+
-  theme_minimal()+
-  labs(x = "empirical FST", y="simulated FST (mean+/-sd over 7500 generations)")+
-  coord_flip()
-```
 ## Density plots
 
 ### Broad-scale

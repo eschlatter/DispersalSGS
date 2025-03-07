@@ -114,6 +114,7 @@ group_by(fst_all_sim,tick,both_pops) %>%
 
 group_by(fst_all_sim,tick,both_regions) %>%
   summarize(pop_fst=mean(fst_sim)) %>%
+  filter(tick>2500) %>%
   ggplot(aes(x=tick,y=pop_fst,color=both_regions))+
   geom_line()+
   geom_hline(aes(yintercept=0))+
@@ -124,6 +125,48 @@ ggplot(data=all_by_tick,aes(x=tick,y=mean_fst))+
   geom_line()+
   geom_point()
 
+```
+
+### Autocorrelation
+
+```{r}
+# first do it all together, then we'll break it up by region pair
+fst_autocorr <- fst_all_sim %>%
+  filter(tick>2500) %>%
+  group_by(tick) %>%
+  summarize(mean_fst = mean(fst_sim))
+
+a <- acf(fst_autocorr$mean_fst,20)
+#p <- pacf(fst_autocorr$mean_fst,20)
+
+# significant autocorrelation up to lag of 3, i.e., 3*200=600 ticks
+
+fst_autocorr <- fst_all_sim %>%
+  filter(tick>2500) %>%
+  group_by(tick, both_regions) %>%
+  summarize(mean_fst = mean(fst_sim))
+
+regionpairs <- unique(fst_autocorr$both_regions)
+autocorrs <- data.frame(lag=numeric(), aut=numeric(),paut=numeric(), regionpair=factor())
+for(regpair in regionpairs){
+  temp_df <- data.frame(lag=0:20, 
+                        aut=acf(filter(fst_autocorr, both_regions==regpair)$mean_fst,20, plot=FALSE)$acf, 
+                        paut=c(NA,pacf(filter(fst_autocorr, both_regions==regpair)$mean_fst,20, plot=FALSE)$acf), 
+                        regionpair=rep(regpair,21))
+  autocorrs <- rbind(autocorrs,temp_df)
+}
+
+ggplot(data=autocorrs,aes(x=lag))+
+  geom_segment(aes(xend=lag,y=0,yend=aut))+
+  geom_hline(aes(yintercept=c(-2/sqrt(length(unique(fst_autocorr$tick))))), color='red')+
+  geom_hline(aes(yintercept=c(2/sqrt(length(unique(fst_autocorr$tick))))),color='red')+
+  facet_wrap(vars(regionpair))
+
+# ggplot(data=autocorrs,aes(x=lag))+
+#   geom_segment(aes(xend=lag,y=0,yend=paut))+
+#   geom_hline(aes(yintercept=c(-2/sqrt(length(unique(fst_autocorr$tick))))), color='red')+
+#   geom_hline(aes(yintercept=c(2/sqrt(length(unique(fst_autocorr$tick))))),color='red')+
+#   facet_wrap(vars(regionpair))
 ```
 
 ## Predicted vs observed FST plots
@@ -289,7 +332,6 @@ opt4 <- optimizeLmer(devfun4) ## takes a deviance function and optimizes over th
 m4 <- mkMerMod(environment(devfun4), opt4, lmod4$reTrms, fr = lmod4$fr) ## produces a lmerMod object from previous steps
 
 anova(m1,m2,m3,m4)
-anova(m1,m3,m2,m4)
 ```
 Slopes:
 ```{r}
@@ -379,6 +421,78 @@ fst_summary %>%
     coord_fixed()
 
 ```
+#### Don't control for nonindependence among site pairs: (also using the mean)
+```{r}
+m5 <- lm(fst_emp~sim_fst_mean+regions_grp+sim_fst_mean*regions_grp, data=fst_data)
+coefs_norand <- as.data.frame(summary(m5)$coefficients) %>%
+  rename(est=Estimate)
+fit_to_grp_norand <- data.frame(grp=factor(c('1','2','3')), slope=NA, intercept=NA)
+fit_to_grp_norand$intercept=c(coefs_norand$est[1],coefs_norand$est[1]+coefs_norand$est[3],coefs_norand$est[1]+coefs_norand$est[4])
+fit_to_grp_norand$slope=c(coefs_norand$est[2],coefs_norand$est[2]+coefs_norand$est[5],coefs_norand$est[2]+coefs_norand$est[6])
+
+
+fst_summary <- fst_summary %>%
+  mutate(regions_grp=factor(case_match(both_regions, 
+                                c('CG','GN','GT','CL','LN','LT','GL')~1, c('CN','CT','NT')~2, c('NN','CC','TT','GG','LL')~3)))
+colors_all=c('1'="#66CCEE",'2'="#CCBB44",'3'="#AA3377")
+# group 1: N/C/T <--> G <--> L
+shapes_1=c('GL'=8,'CG'=0,'GN'=1,'GT'=2,'CL'=15,'LN'=16,'LT'=17)
+fst_summary %>%
+  filter(regions_grp==1) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CL','LN','LT','CG','GN','GT','GL'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[1],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[1],fill=colors_all[1],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+    geom_abline(aes(slope=fit_to_grp_norand$slope[1],intercept=fit_to_grp_norand$intercept[1]),color=colors_all[1])+
+    theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[1], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.76),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_1)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 2: N <--> C <--> T
+shapes_2=c('CN'=8,'NT'=1,'CT'=16)
+fst_summary %>%
+  filter(regions_grp==2) %>%
+  mutate(both_regions=factor(both_regions,levels=c('CN','NT','CT'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[2],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[2],fill=colors_all[2],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_norand$slope[2],intercept=fit_to_grp_norand$intercept[2]),color=colors_all[2])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[2], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.72),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_2)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+
+# group 3: withins
+shapes_3=c('CC'=0,'NN'=2,'TT'=8,'GG'=16,'LL'=17)
+fst_summary %>%
+  filter(regions_grp==3) %>%
+  mutate(both_regions=factor(both_regions,levels=c('NN','CC','TT','LL','GG'))) %>%
+  ggplot(aes(y=fst_emp,x=mean))+
+    geom_errorbar(aes(xmin=mean-sd,xmax=mean+sd),color=colors_all[3],position = position_jitter(seed = 100), alpha=0.15)+
+    geom_point(aes(shape=both_regions),color=colors_all[3],fill=colors_all[3],position = position_jitter(seed = 100))+
+    geom_abline(aes(slope=1,intercept=0))+
+      geom_abline(aes(slope=fit_to_grp_norand$slope[3],intercept=fit_to_grp_norand$intercept[3]),color=colors_all[3])+  
+  theme_bw()+
+    #theme(panel.border=element_rect(colour=colors_all[3], fill=NA, linewidth=2))+
+    theme(legend.position = c(0.89,0.68),legend.background=element_rect(fill='white',size=0.5),legend.title=element_blank())+
+    theme(legend.title=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank())+
+    scale_shape_manual(values=shapes_3)+
+    #labs(y = "empirical FST", x="simulated FST (mean+/-sd over 7500 generations)")+
+    #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
+    coord_fixed()
+```
+
 
 #### Use all the data, not just the mean.
 ```{r}
@@ -522,11 +636,6 @@ fst_summary %>%
     #guides(shape=guide_legend(ncol=3, byrow=TRUE))+
     coord_fixed()
 
-```
-
-```{r}
-grp_1 <- lm(fst_emp~mean, data=subset(fst_summary,regions_grp=='1'))
-summary(grp_1)
 ```
 
 ### Old
